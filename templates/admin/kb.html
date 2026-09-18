@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Base &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div>
+    <h4><i class="bi bi-book me-1"></i> Knowledge Base</h4>
+    <p class="ge-page-sub">Articles that answer common questions before they become complaints.</p>
+  </div>
+  <a href="{{ url_for('admin_kb_save') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle"></i> New article
+  </a>
+</div>
+
+<div class="ge-card">
+  <div class="ge-desktop-table table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Title</th><th>Category</th><th>State</th>
+          <th>Views</th><th>Helpful</th><th>Deflections</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in articles %}
+        <tr>
+          <td class="fw-semibold ge-wrap" style="max-width:260px">{{ a.title }}</td>
+          <td>{{ a.category_name or '—' }}</td>
+          <td>
+            {% if a.is_published %}
+              <span class="badge bg-success">Published</span>
+            {% else %}
+              <span class="badge bg-secondary">Draft</span>
+            {% endif %}
+          </td>
+          <td>{{ a.views }}</td>
+          <td class="text-success">{{ a.helpful_yes }} / <span class="text-danger">{{ a.helpful_no }}</span></td>
+          <td>{{ a.deflections }}</td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end">
+              <a href="{{ url_for('admin_kb_save', article_id=a.id) }}"
+                 class="btn btn-sm btn-outline-primary">Edit</a>
+              <form method="post" action="{{ url_for('admin_kb_toggle', article_id=a.id) }}">
+                <button class="btn btn-sm {{ 'btn-outline-warning' if a.is_published else 'btn-outline-success' }}">
+                  {{ 'Unpublish' if a.is_published else 'Publish' }}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No articles yet. Create one to start deflecting complaints.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="ge-mobile-cards">
+    {% for a in articles %}
+    <div class="p-3 border-bottom">
+      <div class="d-flex justify-content-between gap-2 mb-1">
+        <div class="fw-semibold small ge-wrap">{{ a.title[:80] }}</div>
+        {% if a.is_published %}
+          <span class="badge bg-success flex-shrink-0">Live</span>
+        {% else %}
+          <span class="badge bg-secondary flex-shrink-0">Draft</span>
+        {% endif %}
+      </div>
+      <div class="text-muted small mb-2">
+        {{ a.category_name or '—' }} &middot; {{ a.views }} views &middot; {{ a.deflections }} deflections
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('admin_kb_save', article_id=a.id) }}"
+           class="btn btn-sm btn-outline-primary">Edit</a>
+        <form method="post" action="{{ url_for('admin_kb_toggle', article_id=a.id) }}">
+          <button class="btn btn-sm {{ 'btn-outline-warning' if a.is_published else 'btn-outline-success' }}">
+            {{ 'Unpublish' if a.is_published else 'Publish' }}
+          </button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="ge-empty"><i class="bi bi-book"></i>No articles yet.</div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

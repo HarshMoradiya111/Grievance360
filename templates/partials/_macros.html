@@ -1,0 +1,131 @@
+{# ==========================================================================
+   Shared Jinja macros.
+
+   A macro is a reusable chunk of template, like a function. The complaint
+   card appears on the student, staff and admin screens -- defining it once
+   here means a fix applies everywhere at the same time.
+
+   Use it with:
+       {% from "partials/_macros.html" import complaint_card %}
+       {{ complaint_card(item, show_student=True) }}
+   ========================================================================== #}
+
+{% macro status_badge(status) -%}
+  <span class="badge bg-{{ status_color(status) }}">{{ status }}</span>
+{%- endmacro %}
+
+
+{% macro priority_badge(score) -%}
+  {% set label, colour = priority_label(score) %}
+  <span class="badge bg-{{ colour }}" title="Priority score: {{ score }}">
+    <i class="bi bi-speedometer2"></i> {{ label }}
+  </span>
+{%- endmacro %}
+
+
+{% macro sla_line(item) -%}
+  {% if item.status in ['Resolved', 'Closed', 'Rejected'] %}
+    <span class="text-success small">
+      <i class="bi bi-check-circle"></i> Completed</span>
+  {% elif is_breached(item) %}
+    <span class="text-danger small fw-semibold">
+      <i class="bi bi-exclamation-octagon"></i>
+      SLA breached {{ -days_left(item) }} day(s) ago</span>
+  {% else %}
+    {% set remaining = days_left(item) %}
+    <span class="small {{ 'text-warning' if remaining <= 1 else 'text-muted' }}">
+      <i class="bi bi-clock"></i>
+      {{ remaining }} day(s) left &middot; due {{ pretty_date(item.deadline) }}</span>
+  {% endif %}
+{%- endmacro %}
+
+
+{% macro complaint_card(item, show_student=False, show_assignee=False,
+                        show_priority=False, action_url=None, action_label=None) %}
+  {% set flag = 'ge-breached' if is_breached(item)
+                else ('ge-due-soon' if item.status not in ['Resolved','Closed','Rejected']
+                      and days_left(item) <= 1 else '') %}
+  <div class="ge-card ge-card-hover h-100 p-3 {{ flag }}">
+
+    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+      <span class="ge-ticket">{{ item.ticket_code }}</span>
+      {{ status_badge(item.status) }}
+    </div>
+
+    <h6 class="mb-1 ge-wrap">{{ item.subject }}</h6>
+
+    <div class="small text-muted mb-2 ge-wrap">
+      <i class="bi bi-tag"></i> {{ item.category_name }}
+      {% if item.department_name %}
+        &middot; <i class="bi bi-building"></i> {{ item.department_name }}
+      {% endif %}
+    </div>
+
+    {% if show_student %}
+      <div class="small text-muted mb-1 ge-wrap">
+        <i class="bi bi-person"></i>
+        {{ 'Anonymous' if item.is_anonymous else item.student_name }}
+      </div>
+    {% endif %}
+
+    {% if show_assignee %}
+      <div class="small text-muted mb-1 ge-wrap">
+        <i class="bi bi-person-badge"></i>
+        {{ item.assigned_name or 'Not assigned yet' }}
+      </div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+      {% if show_priority %}
+        {{ priority_badge(item.live_score if item.live_score is defined
+                          else item.priority_score) }}
+      {% endif %}
+      {% if item.reopen_count %}
+        <span class="badge bg-warning text-dark">
+          <i class="bi bi-arrow-clockwise"></i>
+          Reopened &times;{{ item.reopen_count }}</span>
+      {% endif %}
+      {% if item.attachment %}
+        <span class="badge bg-light text-dark border">
+          <i class="bi bi-paperclip"></i> File</span>
+      {% endif %}
+    </div>
+
+    <div class="mb-2">{{ sla_line(item) }}</div>
+
+    <div class="d-flex flex-wrap gap-2">
+      <!-- d-grid on phones makes this button full-width and easy to tap -->
+      <a href="{{ url_for('track_complaint', ticket_code=item.ticket_code) }}"
+         class="btn btn-sm btn-outline-primary flex-fill">
+        <i class="bi bi-activity"></i> Track
+      </a>
+      {% if action_url %}
+        <a href="{{ action_url }}" class="btn btn-sm btn-primary flex-fill">
+          {{ action_label }}
+        </a>
+      {% endif %}
+    </div>
+
+    <div class="text-muted mt-2" style="font-size:.72rem">
+      Raised {{ pretty_date(item.created_at) }}
+    </div>
+  </div>
+{% endmacro %}
+
+
+{% macro stat_tile(value, label, colour='', live_key='') %}
+  <div class="ge-stat border h-100">
+    <div class="ge-stat-value {{ colour }}"
+         {% if live_key %}data-live-key="{{ live_key }}"{% endif %}>{{ value }}</div>
+    <div class="ge-stat-label">{{ label }}</div>
+  </div>
+{% endmacro %}
+
+
+{% macro empty_state(icon, heading, text) %}
+  <div class="ge-empty">
+    <i class="bi {{ icon }}"></i>
+    <div class="fw-semibold">{{ heading }}</div>
+    <div class="small">{{ text }}</div>
+  </div>
+{% endmacro %}

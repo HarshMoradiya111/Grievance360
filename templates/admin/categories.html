@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Categories &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-tags me-1"></i> Complaint categories</h4>
+  <p class="ge-page-sub">SLA days and priority weights drive deadlines and the queue order.</p>
+</div>
+
+<div class="ge-card">
+  <div class="ge-desktop-table table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Category</th><th>Department</th>
+          <th>SLA days</th><th>Weight</th><th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in categories %}
+        <tr>
+          <td class="fw-semibold">{{ c.name }}</td>
+          <td>{{ c.department_name or '—' }}</td>
+          <td>{{ c.sla_days }}</td>
+          <td>{{ c.priority_weight }}</td>
+          <td class="text-end">
+            <a href="{{ url_for('admin_category_edit', cat_id=c.id) }}"
+               class="btn btn-sm btn-outline-primary">Edit</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="ge-mobile-cards">
+    {% for c in categories %}
+    <div class="border-bottom p-3 d-flex justify-content-between align-items-center">
+      <div>
+        <div class="fw-semibold">{{ c.name }}</div>
+        <div class="text-muted small">
+          {{ c.department_name or '—' }} &middot;
+          SLA {{ c.sla_days }} days &middot; Weight {{ c.priority_weight }}
+        </div>
+      </div>
+      <a href="{{ url_for('admin_category_edit', cat_id=c.id) }}"
+         class="btn btn-sm btn-outline-primary">Edit</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

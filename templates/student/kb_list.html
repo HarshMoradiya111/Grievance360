@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Help Centre &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-book me-1"></i> Help Centre</h4>
+  <p class="ge-page-sub">
+    Find answers here before raising a complaint — most questions are answered below.
+  </p>
+</div>
+
+<form method="get" class="ge-card p-3 mb-3">
+  <div class="row g-2">
+    <div class="col-12 col-sm-7">
+      <input type="text" class="form-control" name="q" value="{{ q }}"
+             placeholder="Search articles…">
+    </div>
+    <div class="col-8 col-sm-3">
+      <select class="form-select" name="category_id">
+        <option value="">All categories</option>
+        {% for c in categories %}
+          <option value="{{ c.id }}" {{ 'selected' if category_id|int == c.id }}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-4 col-sm-2">
+      <button class="btn btn-primary w-100"><i class="bi bi-search"></i></button>
+    </div>
+  </div>
+</form>
+
+{% if articles %}
+  <div class="row g-3">
+    {% for a in articles %}
+    <div class="col-12 col-md-6">
+      <a href="{{ url_for('kb_article', article_id=a.id) }}"
+         class="text-decoration-none">
+        <div class="ge-card ge-card-hover p-3 h-100">
+          {% if a.category_name %}
+            <div class="ge-eyebrow mb-1">{{ a.category_name }}</div>
+          {% endif %}
+          <div class="fw-semibold ge-wrap mb-1">{{ a.title }}</div>
+          <div class="small text-muted ge-wrap">
+            {{ a.body[:120] }}{% if a.body|length > 120 %}…{% endif %}
+          </div>
+          <div class="small text-muted mt-2">
+            <i class="bi bi-eye"></i> {{ a.views }}
+            &nbsp;
+            <span class="text-success"><i class="bi bi-hand-thumbs-up"></i> {{ a.helpful_yes }}</span>
+          </div>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="ge-card p-4">
+    <div class="ge-empty">
+      <i class="bi bi-search"></i>
+      <div class="fw-semibold">No articles found</div>
+      <div class="small">Try a different search, or raise a complaint and the team will help.</div>
+    </div>
+    <div class="text-center pb-3">
+      <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Raise a complaint
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Escalations &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div>
+    <h4><i class="bi bi-arrow-up-circle me-1"></i> Escalations</h4>
+    <p class="ge-page-sub">
+      Escalation is ratio-driven: a 2-day SLA escalates faster than a 10-day one.
+    </p>
+  </div>
+  <form method="post" action="{{ url_for('run_escalations') }}">
+    <button class="btn btn-primary">
+      <i class="bi bi-play-circle"></i> Run sweep
+    </button>
+  </form>
+</div>
+
+<!-- Summary tiles -->
+<div class="row g-2 g-md-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value">{{ levels[1] }}</div>
+      <div class="ge-stat-label text-warning">Reminder</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value text-warning">{{ levels[2] }}</div>
+      <div class="ge-stat-label" style="color:var(--ge-ink-faint)">Dept. notified</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value text-danger">{{ levels[3] }}</div>
+      <div class="ge-stat-label" style="color:var(--ge-ink-faint)">Management</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value">{{ levels[0] }}</div>
+      <div class="ge-stat-label">Normal</div>
+    </div>
+  </div>
+</div>
+
+{% for lvl, label, colour, items in sections %}
+  {% if items %}
+  <h6 class="ge-eyebrow mt-3 mb-2">{{ label }} — {{ items|length }}</h6>
+  <div class="ge-card mb-3">
+    <div class="ge-desktop-table table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Ticket</th><th>Subject</th><th>Category</th>
+            <th>Deadline</th><th>Elapsed</th><th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in items %}
+          <tr>
+            <td><span class="ge-ticket">{{ c.ticket_code }}</span></td>
+            <td class="ge-wrap">{{ c.subject[:70] }}</td>
+            <td>{{ c.category_name }}</td>
+            <td class="text-danger small">{{ pretty_date(c.deadline) }}</td>
+            <td>
+              {% set pct = (c.elapsed_pct * 100)|int %}
+              <div class="ge-meter" style="width:80px">
+                <span style="width:{{ [pct,100]|min }}%;
+                             background:{{ '#b85f52' if pct>=100 else '#c9a153' if pct>=50 else 'var(--ge-accent)' }}">
+                </span>
+              </div>
+              <div class="small text-muted">{{ pct }}%</div>
+            </td>
+            <td class="text-end">
+              <a href="{{ url_for('track_complaint', ticket_code=c.ticket_code) }}"
+                 class="btn btn-sm btn-outline-primary">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="ge-mobile-cards">
+      {% for c in items %}
+      <div class="p-3 border-bottom">
+        <div class="d-flex justify-content-between gap-2 mb-1">
+          <span class="ge-ticket">{{ c.ticket_code }}</span>
+          <span class="text-danger small">Due {{ pretty_date(c.deadline) }}</span>
+        </div>
+        <div class="small ge-wrap mb-2">{{ c.subject[:80] }}</div>
+        <a href="{{ url_for('track_complaint', ticket_code=c.ticket_code) }}"
+           class="btn btn-sm btn-outline-primary">View</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endfor %}
+
+{% if not (sections[1][2] or sections[2][2] or sections[3][2]) %}
+  <div class="ge-card p-4">
+    <div class="ge-empty">
+      <i class="bi bi-check-circle"></i>
+      <div class="fw-semibold">All complaints within SLA</div>
+      <div class="small">Run the sweep again after the next round of submissions.</div>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grievance360 complaint report</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+  <style>
+    body { font-size: 12px; }
+    .report-head { border-bottom: 3px solid #1e3a5f; margin-bottom: 1rem; }
+    table { font-size: 11px; }
+    /* @media print strips the browser chrome and the button from the paper */
+    @media print {
+      .no-print { display: none !important; }
+      body { font-size: 10px; }
+      table { font-size: 9px; }
+      thead { display: table-header-group; }  /* repeat header on every page */
+      tr { page-break-inside: avoid; }
+    }
+    @page { size: A4 landscape; margin: 12mm; }
+  </style>
+</head>
+<body class="p-3">
+
+<div class="no-print alert alert-info d-flex flex-wrap gap-2 align-items-center">
+  <div class="flex-fill">
+    <strong>Save as PDF:</strong> click the button, then choose
+    "Save as PDF" as the destination in the print dialog.
+  </div>
+  <button class="btn btn-primary" onclick="window.print()">
+    Print / Save as PDF
+  </button>
+</div>
+
+<div class="report-head pb-2">
+  <h4 class="mb-0">Grievance360 &mdash; Complaint Report</h4>
+  <div class="text-muted">
+    Generated {{ generated }} &middot; {{ rows|length }} record(s)
+  </div>
+</div>
+
+{% if rows %}
+<table class="table table-bordered table-sm align-middle">
+  <thead class="table-light">
+    <tr>
+      <th>#</th><th>Ticket</th><th>Subject</th><th>Category</th>
+      <th>Department</th><th>Raised by</th><th>Assigned</th>
+      <th>Status</th><th>Created</th><th>Deadline</th><th>Resolved</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ row.ticket_code }}</td>
+        <td>{{ row.subject }}</td>
+        <td>{{ row.category_name }}</td>
+        <td>{{ row.department_name or '-' }}</td>
+        <td>{{ 'Anonymous' if row.is_anonymous else row.student_name }}</td>
+        <td>{{ row.assigned_name or '-' }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ pretty_date(row.created_at) }}</td>
+        <td>{{ pretty_date(row.deadline) }}</td>
+        <td>{{ pretty_date(row.resolved_at) if row.resolved_at else '-' }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="text-muted">No complaints matched the selected filters.</p>
+{% endif %}
+
+<div class="text-muted mt-3" style="font-size:10px">
+  Grievance360 &mdash; Smart Grievance Redressal &amp; Analytics Portal
+</div>
+
+</body>
+</html>

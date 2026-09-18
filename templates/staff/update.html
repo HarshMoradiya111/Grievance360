@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import sla_line with context %}
+{% block title %}Update status &middot; {{ complaint.ticket_code }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-2">
+  <div class="col-12 col-lg-7">
+
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <a href="{{ url_for('track_complaint', ticket_code=complaint.ticket_code) }}"
+         class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+      </a>
+      <span class="ge-ticket">{{ complaint.ticket_code }}</span>
+    </div>
+
+    <!-- Context first, so staff never update the wrong ticket -->
+    <div class="ge-card p-3 mb-3">
+      <h6 class="ge-wrap mb-1">{{ complaint.subject }}</h6>
+      <div class="small text-muted ge-wrap mb-2">
+        <i class="bi bi-tag"></i> {{ complaint.category_name }} &middot;
+        <i class="bi bi-person"></i>
+        {{ 'Anonymous' if complaint.is_anonymous else complaint.student_name }}
+      </div>
+      <p class="small ge-wrap mb-2">{{ complaint.description }}</p>
+      {{ sla_line(complaint) }}
+    </div>
+
+    <div class="ge-card p-3 p-md-4">
+      <h6 class="mb-3"><i class="bi bi-arrow-repeat"></i> Update status</h6>
+
+      <form method="POST" novalidate>
+        <div class="mb-3">
+          <label class="form-label">Current status</label>
+          <div>
+            <span class="badge bg-{{ status_color(complaint.status) }} fs-6">
+              {{ complaint.status }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="status" class="form-label">New status</label>
+          <select class="form-select" id="status" name="status" required>
+            {% for option in ALL_STATUSES %}
+              <option value="{{ option }}"
+                      {% if option == complaint.status %}selected{% endif %}>
+                {{ option }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="remark" class="form-label">Remark</label>
+          <textarea class="form-control" id="remark" name="remark" rows="3"
+                    required
+                    placeholder="What did you do? The student sees this."></textarea>
+          <div class="form-text">
+            Required &mdash; this goes into the permanent audit trail and is
+            shown on the student's timeline.
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-check-circle"></i> Save update
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import complaint_card, stat_tile, empty_state
+   with context %}
+{% block title %}My complaints &middot; Grievance360{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h4 class="mb-0"><i class="bi bi-grid"></i> My complaints</h4>
+  {% if profile_missing %}
+    <a href="{{ url_for('profile') }}" class="btn btn-warning">
+      <i class="bi bi-person-exclamation"></i> Complete profile to raise a complaint
+    </a>
+  {% else %}
+    <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> Raise new
+    </a>
+  {% endif %}
+</div>
+
+{% if profile_missing %}
+<div class="alert alert-warning d-flex align-items-start gap-3 mb-3" role="alert">
+  <i class="bi bi-person-exclamation fs-5 mt-1 flex-shrink-0"></i>
+  <div>
+    <div class="fw-semibold">Complete your profile before raising a complaint</div>
+    <div class="small mt-1">
+      The admin needs your student details to process complaints.
+      Please fill in:
+      <strong>{{ profile_missing | map(attribute=1) | join(', ') }}</strong>.
+    </div>
+    <a href="{{ url_for('profile') }}" class="btn btn-sm btn-warning mt-2">
+      <i class="bi bi-pencil me-1"></i> Go to My Profile
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<!-- Stat tiles: 2 per row on a phone, 4 across from md up -->
+<div class="row g-2 g-md-3 mb-4" data-live-page="student">
+  <div class="col-6 col-md-3">{{ stat_tile(counts.total, 'Total', live_key='total') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.open, 'Open', 'text-primary', live_key='open') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.resolved, 'Resolved', 'text-success', live_key='resolved') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.breached, 'Overdue', 'text-danger', live_key='breached') }}</div>
+</div>
+
+{% if complaints %}
+  <!-- Cards, not a table: one per row on a phone, two on tablet, three on desktop -->
+  <div class="row g-3">
+    {% for item in complaints %}
+      <div class="col-12 col-md-6 col-lg-4">
+        {{ complaint_card(item) }}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="ge-card">
+    {{ empty_state('bi-inbox',
+                   'No complaints yet',
+                   'When you raise a complaint it will appear here with a live status.') }}
+    <div class="text-center pb-4">
+      <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> Raise your first complaint
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

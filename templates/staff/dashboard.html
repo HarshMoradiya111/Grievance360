@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import complaint_card, stat_tile, empty_state
+   with context %}
+{% block title %}Assigned to me &middot; Grievance360{% endblock %}
+
+{% block content %}
+
+<h4 class="mb-1"><i class="bi bi-inbox"></i> Assigned to me</h4>
+<p class="text-muted small">
+  Sorted by priority score &mdash; the most urgent complaint is always first.
+</p>
+
+<div class="row g-2 g-md-3 mb-4" data-live-page="staff">
+  <div class="col-6 col-md-3">{{ stat_tile(counts.total, 'Assigned', live_key='total') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.open, 'Open', 'text-primary', live_key='open') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.resolved, 'Resolved', 'text-success', live_key='resolved') }}</div>
+  <div class="col-6 col-md-3">{{ stat_tile(counts.breached, 'Overdue', 'text-danger', live_key='breached') }}</div>
+</div>
+
+{% if complaints %}
+  <div class="row g-3">
+    {% for item in complaints %}
+      <div class="col-12 col-md-6 col-lg-4">
+        {{ complaint_card(item,
+                          show_student=True,
+                          show_priority=True,
+                          action_url=url_for('update_status', complaint_id=item.id),
+                          action_label='Update') }}
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="ge-card">
+    {{ empty_state('bi-check2-circle',
+                   'Nothing assigned to you',
+                   'When the admin assigns a complaint to you it will appear here.') }}
+  </div>
+{% endif %}
+
+{% endblock %}

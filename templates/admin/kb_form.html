@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit article' if article else 'New article' }} &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-book me-1"></i> {{ 'Edit article' if article else 'New article' }}</h4>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-12 col-md-9 col-lg-8">
+    <div class="ge-card p-4">
+      <form method="post">
+
+        <div class="mb-3">
+          <label class="form-label">Title (phrased as the student's question)</label>
+          <input type="text" class="form-control" name="title"
+                 value="{{ (article.title if article else form.get('title','')) }}" required>
+          <div class="form-text">
+            e.g. "How do I apply for a revaluation?" not "Revaluation process"
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Answer</label>
+          <textarea class="form-control" name="body" rows="10" required>{{ (article.body if article else form.get('body','')) }}</textarea>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Category (optional)</label>
+          {% set cur = (article.category_id if article else form.get('category_id',''))|int %}
+          <select class="form-select" name="category_id">
+            <option value="">— All categories —</option>
+            {% for c in categories %}
+              <option value="{{ c.id }}" {{ 'selected' if cur == c.id }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">
+            When set, this article is also shown on the submission form for that category.
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_published"
+                   id="pub" value="1"
+                   {{ 'checked' if (article and article.is_published) or (not article) }}>
+            <label class="form-check-label" for="pub">Publish immediately</label>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary">
+            <i class="bi bi-check2"></i> Save
+          </button>
+          <a href="{{ url_for('admin_kb') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

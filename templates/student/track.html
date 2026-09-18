@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import sla_line with context %}
+{% block title %}{{ complaint.ticket_code }} &middot; Grievance360{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{{ url_for('home_for_role') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Back
+  </a>
+  <span class="ge-ticket">{{ complaint.ticket_code }}</span>
+  <!-- The badge below is what static/js/track.js refreshes every 5 seconds -->
+  <span id="statusBadge" class="badge bg-{{ status_color(complaint.status) }}">
+    {{ complaint.status }}
+  </span>
+  <span id="liveDot" class="small text-muted ms-auto">
+    <i class="bi bi-broadcast"></i> live
+  </span>
+</div>
+
+<div class="row g-3">
+
+  <!-- ============================ LEFT: details ========================== -->
+  <div class="col-12 col-lg-7">
+    <div class="ge-card p-3 p-md-4 mb-3">
+      <h5 class="ge-wrap mb-2">{{ complaint.subject }}</h5>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="badge bg-light text-dark border">
+          <i class="bi bi-tag"></i> {{ complaint.category_name }}</span>
+        {% if complaint.department_name %}
+          <span class="badge bg-light text-dark border">
+            <i class="bi bi-building"></i> {{ complaint.department_name }}</span>
+        {% endif %}
+        {% if complaint.assigned_name %}
+          <span class="badge bg-light text-dark border">
+            <i class="bi bi-person-badge"></i> {{ complaint.assigned_name }}</span>
+        {% endif %}
+        {% if complaint.is_anonymous %}
+          <span class="badge bg-secondary">
+            <i class="bi bi-incognito"></i> Anonymous</span>
+        {% endif %}
+      </div>
+
+      <p class="ge-wrap">{{ complaint.description }}</p>
+
+      {% if complaint.attachment %}
+        <a class="btn btn-sm btn-outline-primary"
+           href="{{ url_for('static', filename='uploads/' ~ complaint.attachment) }}"
+           target="_blank" rel="noopener">
+          <i class="bi bi-paperclip"></i> Open attachment
+        </a>
+      {% endif %}
+
+      <hr>
+      <div class="row g-2 small">
+        <div class="col-6">
+          <div class="text-muted">Raised</div>
+          <div>{{ pretty_date(complaint.created_at) }}</div>
+        </div>
+        <div class="col-6">
+          <div class="text-muted">Deadline (SLA {{ complaint.sla_days }}d)</div>
+          <div id="deadlineText">{{ pretty_date(complaint.deadline) }}</div>
+        </div>
+        <div class="col-12 mt-2" id="slaLine">{{ sla_line(complaint) }}</div>
+      </div>
+    </div>
+
+    <!-- ------------------------------ comments ------------------------- -->
+    <div class="ge-card p-3 p-md-4 mb-3">
+      <h6 class="mb-3"><i class="bi bi-chat-dots"></i>
+        Conversation
+        <span class="badge bg-secondary">{{ comments|length }}</span>
+      </h6>
+
+      {% if comments %}
+        {% for comment in comments %}
+          <div class="ge-comment {{ 'is-mine' if comment.user_id == current_user.id }}">
+            <div class="d-flex justify-content-between align-items-baseline gap-2">
+              <span class="fw-semibold small ge-wrap">
+                {{ comment.author_name }}
+                <span class="badge bg-light text-dark border text-uppercase"
+                      style="font-size:.6rem">{{ comment.author_role }}</span>
+              </span>
+              <span class="text-muted" style="font-size:.7rem">
+                {{ pretty_date(comment.created_at) }}</span>
+            </div>
+            <div class="ge-wrap mt-1">{{ comment.message }}</div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted small mb-3">
+          No messages yet. Ask a question or add more detail below.
+        </p>
+      {% endif %}
+
+      <form method="POST"
+            action="{{ url_for('add_comment', complaint_id=complaint.id) }}"
+            class="mt-3">
+        <label for="message" class="form-label small">Add a message</label>
+        <textarea class="form-control mb-2" id="message" name="message"
+                  rows="3" required
+                  placeholder="Type your message&hellip;"></textarea>
+        <button type="submit" class="btn btn-primary w-100">
+          <i class="bi bi-send"></i> Post message
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ======================== RIGHT: timeline + actions ================== -->
+  <div class="col-12 col-lg-5">
+
+    <div class="ge-card p-3 p-md-4 mb-3">
+      <h6 class="mb-3"><i class="bi bi-activity"></i> Status timeline</h6>
+      <ul class="ge-timeline" id="timeline">
+        {% for entry in history %}
+          <li class="ge-timeline-item {{ 'is-current' if loop.last }}">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <span class="badge bg-{{ status_color(entry.new_status) }}">
+                {{ entry.new_status }}</span>
+              {% if entry.old_status %}
+                <span class="text-muted" style="font-size:.72rem">
+                  from {{ entry.old_status }}</span>
+              {% endif %}
+            </div>
+            <div class="small ge-wrap mt-1">{{ entry.remark }}</div>
+            <div class="text-muted" style="font-size:.72rem">
+              {{ entry.changed_by_name or 'System' }} &middot;
+              {{ pretty_date(entry.created_at) }}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- Staff and admin get the status-update button here -->
+    {% if current_user.role in ['staff', 'admin'] %}
+      <div class="ge-card p-3 mb-3">
+        <h6 class="mb-2"><i class="bi bi-pencil"></i> Staff actions</h6>
+        <div class="d-grid gap-2">
+          <a href="{{ url_for('update_status', complaint_id=complaint.id) }}"
+             class="btn btn-primary">
+            <i class="bi bi-arrow-repeat"></i> Update status
+          </a>
+          {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('assign_complaint', complaint_id=complaint.id) }}"
+               class="btn btn-outline-primary">
+              <i class="bi bi-person-plus"></i> Assign / reassign
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- --------------------------- feedback ---------------------------- -->
+    {% if current_user.role == 'student' and current_user.id == complaint.user_id %}
+
+      {% if rating %}
+        <div class="ge-card p-3 mb-3">
+          <h6 class="mb-2"><i class="bi bi-star-fill text-warning"></i> Your rating</h6>
+          <div class="fs-4">
+            {% for n in range(1, 6) %}
+              <i class="bi bi-star{{ '-fill text-warning' if n <= rating.rating
+                                     else ' text-muted' }}"></i>
+            {% endfor %}
+          </div>
+          {% if rating.remark %}
+            <p class="small text-muted mt-2 mb-0 ge-wrap">{{ rating.remark }}</p>
+          {% endif %}
+        </div>
+
+      {% elif complaint.status in ['Resolved', 'Closed'] %}
+        <div class="ge-card p-3 mb-3">
+          <h6 class="mb-2"><i class="bi bi-star"></i> Rate the resolution</h6>
+          <form method="POST"
+                action="{{ url_for('submit_feedback', complaint_id=complaint.id) }}">
+            <!-- Reversed row + CSS sibling selector = a pure-CSS star widget -->
+            <div class="ge-stars mb-2">
+              {% for n in [5, 4, 3, 2, 1] %}
+                <input type="radio" id="star{{ n }}" name="rating" value="{{ n }}"
+                       required>
+                <label for="star{{ n }}" title="{{ n }} star">&#9733;</label>
+              {% endfor %}
+            </div>
+            <textarea class="form-control mb-2" name="remark" rows="2"
+                      placeholder="Anything you want to add? (optional)"></textarea>
+            <button type="submit" class="btn btn-success w-100">
+              <i class="bi bi-check-circle"></i> Submit rating
+            </button>
+          </form>
+        </div>
+      {% endif %}
+
+      <!-- ---------------------------- reopen --------------------------- -->
+      {% if complaint.status in ['Resolved', 'Closed', 'Rejected'] %}
+        <div class="ge-card p-3 mb-3">
+          <h6 class="mb-2"><i class="bi bi-arrow-clockwise"></i> Not satisfied?</h6>
+          <p class="small text-muted">
+            Reopening restarts the SLA clock and alerts the department again.
+          </p>
+          <form method="POST"
+                action="{{ url_for('reopen_complaint', complaint_id=complaint.id) }}">
+            <textarea class="form-control mb-2" name="reason" rows="2"
+                      placeholder="Why are you reopening this?"></textarea>
+            <button type="submit" class="btn btn-outline-warning w-100">
+              <i class="bi bi-arrow-clockwise"></i> Reopen complaint
+            </button>
+          </form>
+        </div>
+      {% endif %}
+
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- data-* attributes hand the JS its config without inlining any logic -->
+<script src="{{ url_for('static', filename='js/track.js') }}"
+        data-status-url="{{ url_for('api_complaint_status',
+                                    ticket_code=complaint.ticket_code) }}"
+        data-history-count="{{ history|length }}"></script>
+{% endblock %}

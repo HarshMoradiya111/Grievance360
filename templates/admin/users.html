@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Users &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-2">
+  <div>
+    <h4><i class="bi bi-people me-1"></i> Users</h4>
+    <p class="ge-page-sub">Manage staff and administrator accounts.</p>
+  </div>
+  <a href="{{ url_for('admin_user_new') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle"></i> Add user
+  </a>
+</div>
+
+<!-- Filter bar -->
+<div class="ge-card p-3 mb-3">
+  <form method="get" class="row g-2">
+    <div class="col-12 col-sm-5 col-md-4">
+      <input type="text" class="form-control" name="q" value="{{ q }}"
+             placeholder="Search name or email…">
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <select class="form-select" name="role">
+        <option value="">All roles</option>
+        {% for r in ['admin','staff','student'] %}
+          <option value="{{ r }}" {% if role==r %}selected{% endif %}>{{ r|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <select class="form-select" name="active">
+        <option value="">All states</option>
+        <option value="1" {% if active=='1' %}selected{% endif %}>Active</option>
+        <option value="0" {% if active=='0' %}selected{% endif %}>Deactivated</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-auto">
+      <button class="btn btn-outline-primary w-100">
+        <i class="bi bi-search"></i> Filter
+      </button>
+    </div>
+    {% if q or role or active %}
+      <div class="col-12 col-md-auto">
+        <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary w-100">
+          <i class="bi bi-x-circle"></i> Clear
+        </a>
+      </div>
+    {% endif %}
+  </form>
+</div>
+
+<div class="ge-card">
+  <!-- Desktop table -->
+  <div class="ge-desktop-table table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Name</th><th>Email</th><th>Role</th><th>Department</th>
+          <th>Enrolled</th><th>State</th><th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td class="fw-semibold">{{ u.name }}</td>
+          <td class="text-muted">{{ u.email }}</td>
+          <td><span class="badge bg-secondary">{{ u.role|title }}</span></td>
+          <td>{{ u.department_name or '—' }}</td>
+          <td class="text-muted">{{ u.enrollment_no or '—' }}</td>
+          <td>
+            {% if u.is_active %}
+              <span class="badge bg-success">Active</span>
+            {% else %}
+              <span class="badge bg-secondary">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end">
+              <a href="{{ url_for('admin_user_edit', user_id=u.id) }}"
+                 class="btn btn-sm btn-outline-primary">Edit</a>
+              {% if u.id != current_user.id %}
+              <form method="post"
+                    action="{{ url_for('admin_user_toggle', user_id=u.id) }}">
+                <button class="btn btn-sm {{ 'btn-outline-danger' if u.is_active else 'btn-outline-success' }}">
+                  {{ 'Deactivate' if u.is_active else 'Activate' }}
+                </button>
+              </form>
+              {% endif %}
+              <a href="{{ url_for('admin_user_password', user_id=u.id) }}"
+                 class="btn btn-sm btn-outline-secondary">Reset pw</a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Mobile cards -->
+  <div class="ge-mobile-cards">
+    {% for u in users %}
+    <div class="border-bottom p-3">
+      <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+        <div class="fw-semibold">{{ u.name }}</div>
+        <div class="d-flex gap-1">
+          <span class="badge bg-secondary">{{ u.role|title }}</span>
+          {% if u.is_active %}
+            <span class="badge bg-success">Active</span>
+          {% else %}
+            <span class="badge bg-secondary">Off</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="text-muted small mb-2">
+        {{ u.email }}{% if u.department_name %} &middot; {{ u.department_name }}{% endif %}
+      </div>
+      <div class="d-flex gap-2">
+        <a href="{{ url_for('admin_user_edit', user_id=u.id) }}"
+           class="btn btn-sm btn-outline-primary">Edit</a>
+        {% if u.id != current_user.id %}
+        <form method="post" action="{{ url_for('admin_user_toggle', user_id=u.id) }}">
+          <button class="btn btn-sm {{ 'btn-outline-danger' if u.is_active else 'btn-outline-success' }}">
+            {{ 'Deactivate' if u.is_active else 'Activate' }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <div class="ge-empty"><i class="bi bi-people"></i>No users found.</div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

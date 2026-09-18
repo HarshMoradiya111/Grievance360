@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} &middot; Help Centre{% endblock %}
+{% block content %}
+
+<div class="mb-3">
+  <a href="{{ url_for('kb_list') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Back to Help Centre
+  </a>
+</div>
+
+{% if article.category_name %}
+  <div class="ge-eyebrow mb-1">{{ article.category_name }}</div>
+{% endif %}
+<h4 class="mb-3 ge-wrap">{{ article.title }}</h4>
+
+<div class="ge-card p-4 mb-3">
+  <div class="ge-kb-body">{{ article.body }}</div>
+</div>
+
+<!-- Helpfulness prompt -->
+{% if current_user.is_authenticated %}
+<div class="ge-card p-3 d-flex flex-wrap align-items-center gap-3">
+  <div class="small">Was this article helpful?</div>
+  {% if not already_rated %}
+  <form method="post" action="{{ url_for('kb_helpful', article_id=article.id) }}">
+    <input type="hidden" name="vote" value="yes">
+    <button class="btn btn-sm btn-outline-success">
+      <i class="bi bi-hand-thumbs-up"></i> Yes
+    </button>
+  </form>
+  <form method="post" action="{{ url_for('kb_helpful', article_id=article.id) }}">
+    <input type="hidden" name="vote" value="no">
+    <button class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-hand-thumbs-down"></i> No
+    </button>
+  </form>
+  {% else %}
+  <span class="text-muted small">You have already rated this article. Thank you.</span>
+  {% endif %}
+  <span class="ms-auto text-muted small">
+    <i class="bi bi-eye"></i> {{ article.views }} views
+  </span>
+</div>
+{% endif %}
+
+{% if current_user.role == 'student' %}
+<div class="mt-3 text-center">
+  <div class="text-muted small mb-2">Didn't find what you needed?</div>
+  <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary">
+    <i class="bi bi-plus-circle"></i> Raise a complaint
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}

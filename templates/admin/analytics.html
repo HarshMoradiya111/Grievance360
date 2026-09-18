@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import stat_tile, empty_state with context %}
+{% block title %}Analytics &middot; Grievance360{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h4 class="mb-0"><i class="bi bi-bar-chart"></i> Analytics</h4>
+  <div class="d-flex gap-2">
+    <a class="btn btn-sm btn-success" href="{{ url_for('export_excel') }}">
+      <i class="bi bi-file-earmark-excel"></i> Excel</a>
+    <a class="btn btn-sm btn-danger" target="_blank" rel="noopener"
+       href="{{ url_for('export_pdf') }}">
+      <i class="bi bi-file-earmark-pdf"></i> PDF</a>
+  </div>
+</div>
+
+<!-- ===================== HEADLINE NUMBERS + TOP ISSUE ==================== -->
+<div class="row g-2 g-md-3 mb-4">
+  <div class="col-6 col-md-3">
+    {{ stat_tile(breached|length, 'SLA breaches', 'text-danger') }}
+  </div>
+  <div class="col-6 col-md-3">
+    {{ stat_tile(avg_rating ~ ' / 5', 'Avg rating', 'text-warning') }}
+  </div>
+  <div class="col-6 col-md-3">
+    {{ stat_tile(rating_count, 'Ratings given') }}
+  </div>
+  <div class="col-6 col-md-3">
+    {% if avg_resolution %}
+      {{ stat_tile(avg_resolution[-1].days ~ 'd', 'Fastest dept avg', 'text-success') }}
+    {% else %}
+      {{ stat_tile('-', 'Fastest dept avg') }}
+    {% endif %}
+  </div>
+</div>
+
+{% if top_issue %}
+  <!-- TOP RECURRING ISSUE (roadmap Step 40) -->
+  <div class="alert alert-primary d-flex align-items-start gap-3">
+    <i class="bi bi-graph-up-arrow fs-3"></i>
+    <div>
+      <div class="fw-semibold">Top recurring issue: {{ top_issue.label }}</div>
+      <div class="small">
+        {{ top_issue.total }} complaint(s) in this category &mdash; the single
+        largest source of grievances. Fixing the root cause here removes the
+        most tickets.
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+<!-- =============================== CHARTS =============================== -->
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-2">Complaints by status</h6>
+      <div class="ge-chart-box"><canvas id="statusChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-2">Complaints by category</h6>
+      <div class="ge-chart-box"><canvas id="categoryChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-2">Complaints by department</h6>
+      <div class="ge-chart-box"><canvas id="departmentChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-2">Monthly trend</h6>
+      <div class="ge-chart-box"><canvas id="trendChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== AVERAGE RESOLUTION TIME TABLE =================== -->
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-3">Average resolution time per department</h6>
+      {% if avg_resolution %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Department</th><th class="text-end">Avg days</th>
+                  <th class="text-end">Resolved</th></tr>
+            </thead>
+            <tbody>
+              {% for row in avg_resolution %}
+                <tr>
+                  <td class="ge-wrap">{{ row.label }}</td>
+                  <td class="text-end fw-semibold">{{ row.days }}</td>
+                  <td class="text-end text-muted">{{ row.count }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <p class="small text-muted mt-2 mb-0">
+          Measured from <code>created_at</code> to <code>resolved_at</code>.
+          Lower is better.
+        </p>
+      {% else %}
+        {{ empty_state('bi-hourglass', 'Nothing resolved yet',
+                       'This table fills in once complaints start being resolved.') }}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ========================= SLA BREACH LIST ========================== -->
+  <div class="col-12 col-lg-6">
+    <div class="ge-card p-3 h-100">
+      <h6 class="mb-3 text-danger">
+        <i class="bi bi-exclamation-octagon"></i>
+        SLA breach report ({{ breached|length }})
+      </h6>
+      {% if breached %}
+        <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Ticket</th><th>Subject</th><th>Dept</th>
+                  <th class="text-end">Overdue</th></tr>
+            </thead>
+            <tbody>
+              {% for item in breached %}
+                <tr class="table-danger">
+                  <td>
+                    <a class="ge-ticket text-decoration-none"
+                       href="{{ url_for('track_complaint',
+                                        ticket_code=item.ticket_code) }}">
+                      {{ item.ticket_code }}</a>
+                  </td>
+                  <td class="ge-wrap small" style="min-width:160px">
+                    {{ item.subject }}</td>
+                  <td class="small ge-wrap">{{ item.department_name or '-' }}</td>
+                  <td class="text-end text-danger fw-semibold text-nowrap">
+                    {{ -days_left(item) }}d</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        {{ empty_state('bi-emoji-smile', 'No breaches',
+                       'Every open complaint is inside its SLA window.') }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{# Data is handed to JS as inert JSON rather than executable script. #}
+<script id="analyticsData" type="application/json">
+{
+  "byStatus":     {{ by_status|tojson }},
+  "byCategory":   {{ by_category|tojson }},
+  "byDepartment": {{ by_department|tojson }},
+  "monthly":      {{ monthly|tojson }}
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+{% endblock %}

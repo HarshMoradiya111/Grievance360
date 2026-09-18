@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}My Profile &middot; Grievance360{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-2">
+  <div class="col-12 col-lg-9">
+
+    <div class="ge-page-head">
+      <h4><i class="bi bi-person-circle me-1"></i> My Profile</h4>
+      <p class="ge-page-sub">CHARUSAT student record — keep your details up to date.</p>
+    </div>
+
+    {# Build the missing-fields list in the template (avoids an extra route call) #}
+    {% set missing_fields = [] %}
+    {% if not user.phone %}{% set _ = missing_fields.append('Mobile number') %}{% endif %}
+    {% if not user.enrollment_no %}{% set _ = missing_fields.append('Enrollment number') %}{% endif %}
+    {% if not user.program %}{% set _ = missing_fields.append('Programme') %}{% endif %}
+    {% if not user.student_department %}{% set _ = missing_fields.append('Institute / Department') %}{% endif %}
+    {% if not user.semester %}{% set _ = missing_fields.append('Current semester') %}{% endif %}
+
+    {% if missing_fields %}
+    <div class="alert alert-warning d-flex align-items-start gap-3 mb-3" role="alert">
+      <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
+      <div>
+        <div class="fw-semibold">Profile incomplete — you cannot raise a complaint yet</div>
+        <div class="small mt-1">Please fill in the highlighted fields below:</div>
+        <ul class="small mb-0 mt-1 ps-3">
+          {% for f in missing_fields %}
+            <li>{{ f }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="alert">
+      <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+      <span>Profile complete — you can raise complaints.</span>
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+
+      <!-- ===================== LEFT: Avatar card ===================== -->
+      <div class="col-12 col-md-4 col-lg-3">
+        <div class="ge-card p-3 text-center">
+
+          <!-- Photo -->
+          <div class="mb-3">
+            {% if user.photo %}
+              <img src="{{ url_for('static', filename='uploads/' + user.photo) }}"
+                   alt="Profile photo"
+                   class="rounded-circle border"
+                   style="width:100px;height:100px;object-fit:cover">
+            {% else %}
+              <div class="rounded-circle d-inline-flex align-items-center
+                          justify-content-center border"
+                   style="width:100px;height:100px;background:var(--ge-accent-soft)">
+                <i class="bi bi-person-fill" style="font-size:2.5rem;color:var(--ge-accent)"></i>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="fw-semibold">{{ user.name }}</div>
+          <div class="small text-muted mb-2">{{ user.email }}</div>
+
+          <!-- Role badge -->
+          {% if user.role == 'student' %}
+            <span class="badge" style="background:var(--ge-accent-soft);color:var(--ge-accent)">
+              <i class="bi bi-mortarboard me-1"></i>Student
+            </span>
+          {% elif user.role == 'staff' %}
+            <span class="badge" style="background:#e3f0e7;color:#2f6b43">
+              <i class="bi bi-person-badge me-1"></i>Staff
+            </span>
+          {% else %}
+            <span class="badge bg-secondary">Admin</span>
+          {% endif %}
+
+          <hr class="my-3">
+
+          <!-- Quick info pills -->
+          {% if user.enrollment_no %}
+            <div class="small mb-1">
+              <i class="bi bi-card-text me-1 text-muted"></i>
+              <span>{{ user.enrollment_no }}</span>
+            </div>
+          {% endif %}
+          {% if user.program %}
+            <div class="small mb-1 ge-wrap" style="color:var(--ge-primary)">
+              <i class="bi bi-book me-1 text-muted"></i>{{ user.program }}
+            </div>
+          {% endif %}
+          {% if user.student_department %}
+            <div class="small mb-1 ge-wrap text-muted">
+              <i class="bi bi-building me-1"></i>
+              {{ user.student_department.split('—')[0].strip() }}
+            </div>
+          {% endif %}
+          {% if user.semester %}
+            <div class="small text-muted">
+              <i class="bi bi-calendar3 me-1"></i>{{ user.semester }}
+            </div>
+          {% endif %}
+
+          <div class="mt-3 small text-muted">
+            Member since<br>{{ pretty_date(user.created_at).split(',')[0] }}
+          </div>
+        </div>
+      </div>
+
+      <!-- ===================== RIGHT: Edit form ===================== -->
+      <div class="col-12 col-md-8 col-lg-9">
+        <div class="ge-card p-3 p-md-4">
+          <h6 class="mb-3 pb-2 border-bottom">
+            <i class="bi bi-pencil me-1"></i> Edit details
+          </h6>
+
+          <form method="POST" enctype="multipart/form-data" novalidate>
+            <div class="row g-3">
+
+              <!-- Name -->
+              <div class="col-12">
+                <label class="form-label fw-medium">Full name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" name="name"
+                       value="{{ user.name }}" required minlength="2">
+              </div>
+
+              <!-- Email (read-only) -->
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">Email address</label>
+                <input type="email" class="form-control"
+                       value="{{ user.email }}" disabled>
+                <div class="form-text">Contact admin to change your email.</div>
+              </div>
+
+              <!-- Mobile -->
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">
+                  Mobile number
+                  {% if not user.phone %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text">+91</span>
+                  <input type="tel"
+                         class="form-control {% if not user.phone %}border-warning{% endif %}"
+                         name="phone"
+                         value="{{ user.phone or '' }}"
+                         placeholder="9876543210" maxlength="10"
+                         pattern="[0-9]{10}">
+                </div>
+              </div>
+
+              <!-- Enrollment No (students only) -->
+              {% if current_user.role == 'student' %}
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">
+                  Enrollment number
+                  {% if not user.enrollment_no %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <input type="text"
+                       class="form-control {% if not user.enrollment_no %}border-warning{% endif %}"
+                       name="enrollment_no"
+                       value="{{ user.enrollment_no or '' }}"
+                       placeholder="e.g. 25MSIT077">
+              </div>
+
+              <!-- Programme -->
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">
+                  Programme
+                  {% if not user.program %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <select class="form-select {% if not user.program %}border-warning{% endif %}"
+                        name="program" id="programSel">
+                  <option value="">— Select programme —</option>
+                  {% for prog in programs %}
+                    <option value="{{ prog }}"
+                            {% if user.program == prog %}selected{% endif %}>
+                      {{ prog }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Institute / Department -->
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">
+                  Institute / Department
+                  <span class="text-muted small">(CHARUSAT)</span>
+                  {% if not user.student_department %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <select class="form-select {% if not user.student_department %}border-warning{% endif %}"
+                        name="student_department">
+                  <option value="">— Select institute —</option>
+                  {% for dept in depts %}
+                    <option value="{{ dept }}"
+                            {% if user.student_department == dept %}selected{% endif %}>
+                      {{ dept }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Semester (rebuilt by JS based on programme) -->
+              <div class="col-12 col-sm-6">
+                <label class="form-label fw-medium">
+                  Current semester
+                  {% if not user.semester %}<span class="text-danger">*</span>{% endif %}
+                </label>
+                <select class="form-select {% if not user.semester %}border-warning{% endif %}"
+                        name="semester" id="semesterSelect">
+                  <option value="">— Select programme first —</option>
+                </select>
+                <div class="form-text" id="semHint"></div>
+              </div>
+              {% endif %}
+
+              <!-- Photo upload -->
+              <div class="col-12">
+                <label class="form-label fw-medium">
+                  Profile photo
+                  <span class="text-muted small">(optional — JPG/PNG, ≤ 5 MB)</span>
+                </label>
+                <input type="file" class="form-control" name="photo"
+                       accept=".png,.jpg,.jpeg">
+                {% if user.photo %}
+                  <div class="form-text">
+                    <i class="bi bi-check-circle text-success me-1"></i>
+                    Photo on file.
+                    <a href="{{ url_for('static', filename='uploads/' + user.photo) }}"
+                       target="_blank" class="ms-1">View current</a>
+                  </div>
+                {% endif %}
+              </div>
+
+              <!-- Save -->
+              <div class="col-12 d-grid d-sm-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-check-lg me-1"></i> Save changes
+                </button>
+                <a href="{{ url_for('student_dashboard') }}"
+                   class="btn btn-outline-secondary">Cancel</a>
+              </div>
+
+            </div>
+          </form>
+        </div>
+
+        <!-- CHARUSAT info strip -->
+        <div class="ge-card p-3 mt-3 d-flex align-items-start gap-3"
+             style="border-left:3px solid var(--ge-accent)">
+          <i class="bi bi-building fs-4 mt-1" style="color:var(--ge-accent)"></i>
+          <div class="small">
+            <div class="fw-semibold mb-1">Charotar University of Science &amp; Technology</div>
+            CHARUSAT Campus, Changa, Anand, Gujarat — 388421<br>
+            For urgent matters visit the <strong>Student Welfare Office, Main Block</strong>
+            or email
+            <a href="mailto:grievance@charusat.ac.in">grievance@charusat.ac.in</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  /* Programme → total number of semesters */
+  var SEM_COUNT = {
+    "B.Tech — Computer Engineering"        : 8,
+    "B.Tech — Information Technology"      : 8,
+    "B.Tech — Electronics & Communication" : 8,
+    "B.Tech — Mechanical Engineering"      : 8,
+    "B.Tech — Civil Engineering"           : 8,
+    "B.Tech — Electrical Engineering"      : 8,
+    "B.Pharm"                                   : 8,
+    "BCA"                                       : 6,
+    "BSc — Biotechnology"                  : 6,
+    "M.Tech — Computer Engineering"        : 4,
+    "M.Tech — Information Technology"      : 4,
+    "MSc-IT"                                    : 4,
+    "MCA"                                       : 4,
+    "MBA"                                       : 4,
+    "M.Pharm"                                   : 4,
+    "Other"                                     : 8
+  };
+
+  var programSel = document.getElementById("programSel");
+  var semSel     = document.getElementById("semesterSelect");
+  var semHint    = document.getElementById("semHint");
+
+  /* Server-rendered saved values so JS can pre-select them on load */
+  var savedSem  = {{ (user.semester or '')|tojson }};
+
+  function rebuildSemesters(prog) {
+    semSel.innerHTML = "";
+    var count = SEM_COUNT[prog];
+
+    if (!prog || !count) {
+      semSel.appendChild(new Option("— Select programme first —", ""));
+      if (semHint) semHint.textContent = "";
+      return;
+    }
+
+    semSel.appendChild(new Option("— Select semester —", ""));
+    var years = count / 2;
+    if (semHint) {
+      semHint.textContent =
+        prog + " — " + years + "-year programme, " + count + " semesters.";
+    }
+
+    for (var i = 1; i <= count; i++) {
+      var label = "Semester " + i;
+      var opt   = new Option(label, label);
+      if (label === savedSem) { opt.selected = true; }
+      semSel.appendChild(opt);
+    }
+  }
+
+  if (programSel) {
+    programSel.addEventListener("change", function () {
+      savedSem = "";          /* user is picking fresh — don't stick old value */
+      rebuildSemesters(this.value);
+    });
+    rebuildSemesters(programSel.value);   /* initialise on page load */
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Grievance360 &middot; Raise your voice, track your grievance{% endblock %}
+
+{% block content %}
+<!-- Hero. col-12 first (phone), then md/lg refinements -- never the reverse. -->
+<div class="row align-items-center g-4 mt-1">
+  <div class="col-12 col-lg-7">
+    <h1 class="fw-bold ge-wrap" style="color:var(--ge-primary)">
+      Raise your voice.<br>Track every step.
+    </h1>
+    <p class="lead text-muted ge-wrap">
+      Grievance360 is your college's grievance redressal portal. Submit a
+      complaint in under a minute, get a ticket number, and watch it move
+      from <em>Pending</em> to <em>Resolved</em> in real time.
+    </p>
+    <div class="d-grid d-sm-flex gap-2 mt-3">
+      <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg">
+        <i class="bi bi-person-plus"></i> Register as Student
+      </a>
+      <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg">
+        <i class="bi bi-box-arrow-in-right"></i> Login
+      </a>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-5">
+    <div class="ge-card p-3 p-md-4">
+      <h6 class="text-uppercase text-muted small mb-3">At a glance</h6>
+      <div class="row g-2 text-center">
+        <div class="col-6">
+          <div class="ge-stat border">
+            <div class="ge-stat-value">{{ stats.total }}</div>
+            <div class="ge-stat-label">Complaints</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="ge-stat border">
+            <div class="ge-stat-value text-success">{{ stats.resolved }}</div>
+            <div class="ge-stat-label">Resolved</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="ge-stat border">
+            <div class="ge-stat-value">{{ stats.categories }}</div>
+            <div class="ge-stat-label">Categories</div>
+          </div>
+        </div>
+        <div class="col-6">
+          <div class="ge-stat border">
+            <div class="ge-stat-value">{{ stats.departments }}</div>
+            <div class="ge-stat-label">Departments</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- How it works -->
+<h4 class="mt-5 mb-3">How it works</h4>
+<div class="row g-3">
+  {% set steps = [
+      ('1', 'bi-pencil-square', 'Raise', 'Pick a category, describe the issue, attach a photo. Stay anonymous if you prefer.'),
+      ('2', 'bi-diagram-3',     'Auto-route', 'The system reads your description and suggests the right department instantly.'),
+      ('3', 'bi-activity',      'Track', 'A live timeline shows every status change, with staff remarks and an SLA countdown.'),
+      ('4', 'bi-star',          'Rate', 'Once resolved, rate the response. Not satisfied? Reopen it in one tap.')
+  ] %}
+  {% for number, icon, heading, text in steps %}
+  <div class="col-12 col-md-6 col-lg-3">
+    <div class="ge-card ge-card-hover h-100 p-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge rounded-pill bg-primary">{{ number }}</span>
+        <i class="bi {{ icon }} fs-4" style="color:var(--ge-primary-light)"></i>
+        <span class="fw-semibold">{{ heading }}</span>
+      </div>
+      <p class="small text-muted mb-0 ge-wrap">{{ text }}</p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="ge-card p-3 mt-4">
+  <h6 class="mb-2"><i class="bi bi-info-circle"></i> Demo accounts</h6>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Role</th><th>Email</th><th>Password</th></tr></thead>
+      <tbody>
+        <tr><td>Student</td><td class="ge-wrap">harsh@student.edu</td><td>student123</td></tr>
+        <tr><td>Staff</td><td class="ge-wrap">it.staff@grievance360.edu</td><td>staff123</td></tr>
+        <tr><td>Admin</td><td class="ge-wrap">admin@grievance360.edu</td><td>admin123</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

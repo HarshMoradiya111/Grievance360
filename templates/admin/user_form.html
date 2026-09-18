@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit user' if user else 'Add user' }} &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-person-plus me-1"></i> {{ 'Edit user' if user else 'Add user' }}</h4>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-6">
+    <div class="ge-card p-4">
+      <form method="post">
+
+        <div class="mb-3">
+          <label class="form-label">Full name</label>
+          <input type="text" class="form-control" name="name"
+                 value="{{ (user.name if user else form.get('name','')) }}" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Email address</label>
+          <input type="email" class="form-control" name="email"
+                 value="{{ (user.email if user else form.get('email','')) }}" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Phone</label>
+          <input type="text" class="form-control" name="phone"
+                 value="{{ (user.phone or '' if user else form.get('phone','')) }}">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Role</label>
+          {% set cur_role = user.role if user else form.get('role','staff') %}
+          <select class="form-select" name="role" required
+                  {% if user and user.id == current_user.id %}disabled{% endif %}>
+            {% for r in ['admin','staff'] %}
+              <option value="{{ r }}" {{ 'selected' if cur_role == r }}>{{ r|title }}</option>
+            {% endfor %}
+          </select>
+          {% if user and user.id == current_user.id %}
+            <div class="form-text">You cannot change your own role.</div>
+          {% endif %}
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Department</label>
+          {% set cur_dept = user.department_id if user else form.get('department_id','') %}
+          <select class="form-select" name="department_id">
+            <option value="">— None —</option>
+            {% for d in departments %}
+              <option value="{{ d.id }}" {{ 'selected' if cur_dept|int == d.id }}>
+                {{ d.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if not user %}
+        <div class="mb-3">
+          <label class="form-label">Initial password</label>
+          <input type="password" class="form-control" name="password" required
+                 minlength="6">
+          <div class="form-text">Minimum 6 characters. Stored as a hash.</div>
+        </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check2"></i> {{ 'Save changes' if user else 'Create user' }}
+          </button>
+          <a href="{{ url_for('admin_users') }}" class="btn btn-outline-secondary">
+            Cancel
+          </a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

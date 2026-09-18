@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import complaint_card with context %}
+{% block title %}{{ member.name }} &middot; Performance{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-person-badge me-1"></i> {{ member.name }}</h4>
+  <p class="ge-page-sub">{{ member.email }} &middot; {{ member.department_name or 'No department' }}</p>
+</div>
+
+<!-- Metric tiles -->
+<div class="row g-2 g-md-3 mb-4">
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value">{{ metrics.handled }}</div>
+      <div class="ge-stat-label">Handled</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value {{ 'text-success' if metrics.compliance is not none and metrics.compliance >= 80 else 'text-warning' }}">
+        {{ metrics.compliance }}%
+      </div>
+      <div class="ge-stat-label">SLA</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value">{{ metrics.avg_days or '—' }}</div>
+      <div class="ge-stat-label">Avg. days</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value">
+        {{ metrics.avg_rating or '—' }}{% if metrics.avg_rating %}/5{% endif %}
+      </div>
+      <div class="ge-stat-label">Satisfaction</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value {{ 'text-warning' if metrics.reopen_rate and metrics.reopen_rate > 10 }}">
+        {{ metrics.reopen_rate or 0 }}%
+      </div>
+      <div class="ge-stat-label">Reopen rate</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <div class="ge-stat text-center">
+      <div class="ge-stat-value {{ 'text-danger' if metrics.overdue_count }}">
+        {{ metrics.overdue_count }}
+      </div>
+      <div class="ge-stat-label">Overdue</div>
+    </div>
+  </div>
+</div>
+
+{% if ratings %}
+<h6 class="ge-eyebrow mb-2">Student remarks</h6>
+<div class="ge-card mb-4">
+  {% for r in ratings %}
+  <div class="p-3 border-bottom">
+    <div class="d-flex gap-2 align-items-center mb-1">
+      <span class="text-warning">{{ '★' * r.rating }}{{ '☆' * (5 - r.rating) }}</span>
+      <span class="text-muted small">{{ r.ticket_code }}</span>
+      <span class="text-muted small ms-auto">{{ pretty_date(r.created_at) }}</span>
+    </div>
+    {% if r.remark %}
+    <div class="small ge-wrap text-muted">{{ r.remark }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="d-flex align-items-center justify-content-between mb-2">
+  <h6 class="ge-eyebrow mb-0">All assigned complaints</h6>
+  <a href="{{ url_for('admin_performance') }}" class="btn btn-sm btn-outline-secondary">
+    ← Back to scorecard
+  </a>
+</div>
+<div class="row g-3">
+  {% for item in complaints %}
+  <div class="col-12 col-md-6 col-lg-4">
+    {{ complaint_card(item, show_priority=True) }}
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="ge-card p-4 ge-empty">
+      <i class="bi bi-inbox"></i>
+      <div>No complaints assigned yet.</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

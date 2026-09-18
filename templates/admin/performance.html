@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Performance scorecard &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head">
+  <h4><i class="bi bi-graph-up me-1"></i> Staff performance scorecard</h4>
+  <p class="ge-page-sub">All metrics are live from the complaint records — no stored aggregates.</p>
+</div>
+
+<!-- Department summary -->
+{% if dept_rows %}
+<h6 class="ge-eyebrow mb-2">By department</h6>
+<div class="row g-2 g-md-3 mb-4">
+  {% for d in dept_rows %}
+  <div class="col-12 col-sm-6 col-md-3">
+    <div class="ge-stat">
+      <div class="ge-stat-value">{{ d.handled }}</div>
+      <div class="ge-stat-label">{{ d.name }}</div>
+      <div class="small text-muted mt-1">
+        SLA compliance:
+        <span class="{{ 'text-success' if d.compliance >= 80 else 'text-warning' if d.compliance >= 50 else 'text-danger' }}">
+          {{ d.compliance }}%
+        </span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Per-staff table -->
+<h6 class="ge-eyebrow mb-2">By staff member</h6>
+<div class="ge-card">
+  <div class="ge-desktop-table table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Name</th><th>Dept.</th><th>Handled</th>
+          <th>Avg. days</th><th>SLA %</th>
+          <th>Satisfaction</th><th>Reopen %</th>
+          <th>Open</th><th>Overdue</th>
+          <th class="text-end">Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in staff_rows %}
+        <tr>
+          <td class="fw-semibold">{{ s.name }}</td>
+          <td class="text-muted">{{ s.department_name or '—' }}</td>
+          <td>{{ s.handled }}</td>
+          <td>
+            {% if s.avg_days is not none %}
+              {{ s.avg_days }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.compliance is not none %}
+              <span class="{{ 'text-success' if s.compliance >= 80 else 'text-warning' if s.compliance >= 50 else 'text-danger' }}">
+                {{ s.compliance }}%
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if s.avg_rating is not none %}
+              {{ s.avg_rating }}/5
+              <span class="text-warning">★</span>
+              <span class="text-muted small">({{ s.rating_count }})</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if s.reopen_rate is not none %}
+              {{ s.reopen_rate }}%
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ s.open_count }}</td>
+          <td>
+            {% if s.overdue_count %}
+              <span class="text-danger fw-semibold">{{ s.overdue_count }}</span>
+            {% else %}0{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{{ url_for('admin_performance_detail', staff_id=s.id) }}"
+               class="btn btn-sm btn-outline-primary">Detail</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-4">No staff data yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="ge-mobile-cards">
+    {% for s in staff_rows %}
+    <div class="p-3 border-bottom">
+      <div class="d-flex justify-content-between gap-2 mb-1">
+        <div class="fw-semibold">{{ s.name }}</div>
+        <span class="text-muted small">{{ s.department_name or '—' }}</span>
+      </div>
+      <div class="row row-cols-3 g-1 small text-muted mb-2">
+        <div>Handled: <strong>{{ s.handled }}</strong></div>
+        <div>SLA: <strong>{{ s.compliance or '—' }}{% if s.compliance is not none %}%{% endif %}</strong></div>
+        <div>Overdue: <strong class="{{ 'text-danger' if s.overdue_count }}">{{ s.overdue_count }}</strong></div>
+      </div>
+      <a href="{{ url_for('admin_performance_detail', staff_id=s.id) }}"
+         class="btn btn-sm btn-outline-primary">Detail</a>
+    </div>
+    {% else %}
+    <div class="ge-empty"><i class="bi bi-graph-up"></i>No staff data yet.</div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

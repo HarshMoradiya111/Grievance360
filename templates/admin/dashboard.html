@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "partials/_macros.html" import stat_tile, empty_state, priority_badge,
+   sla_line with context %}
+{% block title %}Admin dashboard &middot; Grievance360{% endblock %}
+
+{% block content %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h4 class="mb-0"><i class="bi bi-speedometer2"></i> Dashboard</h4>
+  <a href="{{ url_for('admin_analytics') }}" class="btn btn-outline-primary">
+    <i class="bi bi-bar-chart"></i> Full analytics
+  </a>
+</div>
+
+<div class="row g-2 g-md-3 mb-4" data-live-page="admin">
+  <div class="col-6 col-md-4 col-lg-2">{{ stat_tile(totals.all, 'Total', live_key='all') }}</div>
+  <div class="col-6 col-md-4 col-lg-2">{{ stat_tile(totals.pending, 'Pending', 'text-secondary', live_key='pending') }}</div>
+  <div class="col-6 col-md-4 col-lg-2">{{ stat_tile(totals.in_progress, 'In progress', 'text-primary', live_key='in_progress') }}</div>
+  <div class="col-6 col-md-4 col-lg-2">{{ stat_tile(totals.resolved, 'Resolved', 'text-success', live_key='resolved') }}</div>
+  <div class="col-6 col-md-4 col-lg-2">{{ stat_tile(totals.breached, 'SLA breached', 'text-danger', live_key='breached') }}</div>
+  <div class="col-6 col-md-4 col-lg-2">
+    <a href="{{ url_for('admin_complaints', status='Pending') }}"
+       class="text-decoration-none">
+      {{ stat_tile('&rarr;'|safe, 'Triage now', 'text-primary') }}
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- ===================== PRIORITY QUEUE (Step 28) ====================== -->
+  <div class="col-12 col-lg-7">
+    <div class="ge-card p-3 p-md-4 h-100">
+      <div class="d-flex justify-content-between align-items-baseline mb-1">
+        <h6 class="mb-0"><i class="bi bi-sort-down"></i> Priority queue</h6>
+        <a class="small" href="{{ url_for('admin_complaints') }}">See all</a>
+      </div>
+      <p class="text-muted mb-3" style="font-size:.75rem">
+        score = (weight &times; 10) + (age in days &times; 2) + (reopens &times; 5)
+      </p>
+
+      {% if queue %}
+        {% for item in queue %}
+          <div class="d-flex flex-wrap align-items-center gap-2 py-2
+                      border-bottom {{ 'ge-breached ps-2' if is_breached(item) }}">
+            <span class="ge-ticket">{{ item.ticket_code }}</span>
+            {{ priority_badge(item.live_score) }}
+            <span class="badge bg-{{ status_color(item.status) }}">
+              {{ item.status }}</span>
+            <div class="w-100 small ge-wrap">{{ item.subject }}</div>
+            <div class="small text-muted ge-wrap">
+              <i class="bi bi-tag"></i> {{ item.category_name }}
+              &middot; <i class="bi bi-person-badge"></i>
+              {{ item.assigned_name or 'Unassigned' }}
+            </div>
+            <div class="ms-auto d-flex gap-2">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('track_complaint', ticket_code=item.ticket_code) }}">
+                Track</a>
+              <a class="btn btn-sm btn-primary"
+                 href="{{ url_for('assign_complaint', complaint_id=item.id) }}">
+                Assign</a>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        {{ empty_state('bi-check2-all', 'Queue is clear',
+                       'Every complaint has been resolved or closed.') }}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ==================== SLA BREACH REPORT (Step 38) ==================== -->
+  <div class="col-12 col-lg-5">
+    <div class="ge-card p-3 p-md-4 h-100">
+      <div class="d-flex justify-content-between align-items-baseline mb-3">
+        <h6 class="mb-0 text-danger">
+          <i class="bi bi-exclamation-octagon"></i> SLA breaches
+        </h6>
+        {% if breached_total > breached|length %}
+          <a class="small"
+             href="{{ url_for('admin_complaints', breached='1') }}">
+            See all {{ breached_total }}</a>
+        {% endif %}
+      </div>
+
+      {% if breached %}
+        {% for item in breached %}
+          <div class="ge-breached ps-2 py-2 border-bottom">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+              <span class="ge-ticket">{{ item.ticket_code }}</span>
+              <span class="badge bg-{{ status_color(item.status) }}">
+                {{ item.status }}</span>
+            </div>
+            <div class="small ge-wrap">{{ item.subject }}</div>
+            <div class="small text-danger">
+              <i class="bi bi-clock-history"></i>
+              Overdue by {{ -days_left(item) }} day(s)
+              &middot; {{ item.department_name or 'Unassigned' }}
+            </div>
+            <a class="small"
+               href="{{ url_for('track_complaint', ticket_code=item.ticket_code) }}">
+              Open ticket</a>
+          </div>
+        {% endfor %}
+      {% else %}
+        {{ empty_state('bi-emoji-smile', 'No breaches',
+                       'Every open complaint is still inside its SLA window.') }}
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

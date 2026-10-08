@@ -51,10 +51,15 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    row = db.query_one(
-        "SELECT * FROM users WHERE id = %s AND is_active = 1", (user_id,)
-    )
-    return User(row) if row else None
+    from bson.objectid import ObjectId
+    try:
+        row = db.get_db().users.find_one({"_id": ObjectId(user_id), "is_active": True})
+        if row:
+            row["id"] = str(row["_id"])  # Map _id to id for UserMixin
+            return User(row)
+    except Exception:
+        pass
+    return None
 
 
 def role_required(*roles):
@@ -190,7 +195,9 @@ PROFILE_REQUIRED_FIELDS = [
 def student_profile_missing(user_id):
     """Return a list of (field, label) tuples that are still blank.
     Returns an empty list when the profile is complete."""
-    row = db.query_one("SELECT * FROM users WHERE id = %s", (user_id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    row = db_conn.users.find_one({"_id": ObjectId(user_id)})
     if not row:
         return PROFILE_REQUIRED_FIELDS[:]
     return [(f, lbl) for f, lbl in PROFILE_REQUIRED_FIELDS
@@ -205,13 +212,12 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("home_for_role"))
 
+    db_conn = db.get_db()
     stats = {
-        "total": db.query_one("SELECT COUNT(*) AS n FROM complaints")["n"],
-        "resolved": db.query_one(
-            "SELECT COUNT(*) AS n FROM complaints WHERE status IN "
-            "('Resolved','Closed')")["n"],
-        "categories": db.query_one("SELECT COUNT(*) AS n FROM categories")["n"],
-        "departments": db.query_one("SELECT COUNT(*) AS n FROM departments")["n"],
+        "total": db_conn.complaints.count_documents({}),
+        "resolved": db_conn.complaints.count_documents({"status": {"$in": ["Resolved", "Closed"]}}),
+        "categories": db_conn.categories.count_documents({}),
+        "departments": db_conn.departments.count_documents({}),
     }
     return render_template("index.html", stats=stats)
 
@@ -249,7 +255,8 @@ def register():
             errors.append("Password must be at least 6 characters.")
         if password != confirm:
             errors.append("The two passwords do not match.")
-        if db.query_one("SELECT id FROM users WHERE email = %s", (email,)):
+        db_conn = db.get_db()
+        if db_conn.users.find_one({"email": email}):
             errors.append("That email is already registered. Try logging in.")
 
         if errors:
@@ -257,14 +264,16 @@ def register():
                 flash(message, "danger")
             return render_template("register.html", form=request.form)
 
-        db.execute(
-            "INSERT INTO users "
-            "(name, email, password_hash, role, enrollment_no, phone, "
-            " is_active, created_at) "
-            "VALUES (%s, %s, %s, 'student', %s, %s, 1, %s)",
-            (name, email, generate_password_hash(password), enrollment,
-             phone, helpers.now_str()),
-        )
+        db_conn.users.insert_one({
+            "name": name,
+            "email": email,
+            "password_hash": generate_password_hash(password),
+            "role": "student",
+            "enrollment_no": enrollment,
+            "phone": phone,
+            "is_active": True,
+            "created_at": datetime.now()
+        })
         flash("Account created. Please log in.", "success")
         return redirect(url_for("login"))
 
@@ -280,11 +289,13 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
-        row = db.query_one("SELECT * FROM users WHERE email = %s", (email,))
+        db_conn = db.get_db()
+        row = db_conn.users.find_one({"email": email})
         if row and check_password_hash(row["password_hash"], password):
-            if not row["is_active"]:
+            if not row.get("is_active"):
                 flash("This account has been deactivated.", "danger")
                 return render_template("login.html", email=email)
+            row["id"] = str(row["_id"])
             login_user(User(row))
             flash("Welcome back, %s." % row["name"].split(" ")[0], "success")
             return redirect(url_for("home_for_role"))
@@ -316,30 +327,32 @@ def forgot_password():
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        row = db.query_one("SELECT id FROM users WHERE email = %s", (email,))
+        db_conn = db.get_db()
+        row = db_conn.users.find_one({"email": email})
 
         if row:
             token = helpers.make_reset_token()
             expires = (datetime.now() + timedelta(hours=1)).strftime(
                 helpers.DT_FORMAT)
-            db.execute(
-                "UPDATE users SET reset_token = %s, reset_expires = %s "
-                "WHERE id = %s",
-                (token, expires, row["id"]),
+            db_conn.users.update_one(
+                {"_id": row["_id"]},
+                {"$set": {"reset_token": token, "reset_expires": expires}}
             )
-            reset_link = url_for("reset_password", token=token, _external=True)
-            flash("Reset link generated. It is valid for 1 hour.", "success")
-        else:
-            # Same message either way, so nobody can probe for valid emails.
-            flash("If that email is registered, a reset link has been created.",
-                  "info")
+            reset_path = url_for("reset_password", token=token)
+            reset_link = config.PORTAL_URL.rstrip("/") + reset_path
+            mail.notify_password_reset(email, reset_link)
 
-    return render_template("forgot.html", reset_link=reset_link)
+        # Same message either way, so nobody can probe for valid emails.
+        flash("If that email is registered, a password reset link has been sent to it.",
+              "info")
+
+    return render_template("forgot.html", reset_link=None)
 
 
 @app.route("/reset/<token>", methods=["GET", "POST"])
 def reset_password(token):
-    row = db.query_one("SELECT * FROM users WHERE reset_token = %s", (token,))
+    db_conn = db.get_db()
+    row = db_conn.users.find_one({"reset_token": token})
 
     expired = True
     if row:
@@ -359,10 +372,11 @@ def reset_password(token):
         elif password != confirm:
             flash("The two passwords do not match.", "danger")
         else:
-            db.execute(
-                "UPDATE users SET password_hash = %s, reset_token = NULL, "
-                "reset_expires = NULL WHERE id = %s",
-                (generate_password_hash(password), row["id"]),
+            db_conn = db.get_db()
+            db_conn.users.update_one(
+                {"_id": row["_id"]},
+                {"$set": {"password_hash": generate_password_hash(password)},
+                 "$unset": {"reset_token": "", "reset_expires": ""}}
             )
             flash("Password updated. Please log in.", "success")
             return redirect(url_for("login"))
@@ -377,15 +391,32 @@ def reset_password(token):
 @login_required
 @role_required("student")
 def student_dashboard():
-    complaints = db.query_all(
-        "SELECT c.*, cat.name AS category_name, d.name AS department_name "
-        "FROM complaints c "
-        "JOIN categories cat     ON cat.id = c.category_id "
-        "LEFT JOIN departments d ON d.id   = c.department_id "
-        "WHERE c.user_id = %s "
-        "ORDER BY c.created_at DESC",
-        (current_user.id,),
-    )
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    cursor = db_conn.complaints.aggregate([
+        {"$match": {"user_id": ObjectId(current_user.id)}},
+        {"$lookup": {
+            "from": "categories",
+            "localField": "category_id",
+            "foreignField": "_id",
+            "as": "category"
+        }},
+        {"$lookup": {
+            "from": "departments",
+            "localField": "department_id",
+            "foreignField": "_id",
+            "as": "department"
+        }},
+        {"$unwind": {"path": "$category", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$department", "preserveNullAndEmptyArrays": True}},
+        {"$sort": {"created_at": -1}}
+    ])
+    complaints = []
+    for c in cursor:
+        c["id"] = str(c["_id"])
+        c["category_name"] = c.get("category", {}).get("name")
+        c["department_name"] = c.get("department", {}).get("name")
+        complaints.append(c)
 
     counts = {"total": len(complaints), "open": 0, "resolved": 0, "breached": 0}
     for item in complaints:
@@ -1191,20 +1222,18 @@ def api_complaint_status(ticket_code):
 @app.route("/api/notifications")
 @login_required
 def api_notifications():
-    rows = db.query_all(
-        "SELECT * FROM notifications WHERE user_id = %s "
-        "ORDER BY created_at DESC, id DESC LIMIT 10", (current_user.id,))
-    unread = db.query_one(
-        "SELECT COUNT(*) AS n FROM notifications "
-        "WHERE user_id = %s AND is_read = 0", (current_user.id,))["n"]
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    rows = list(db_conn.notifications.find({"user_id": ObjectId(current_user.id)}).sort("created_at", -1).limit(10))
+    unread = db_conn.notifications.count_documents({"user_id": ObjectId(current_user.id), "is_read": False})
 
     return jsonify({
         "unread": unread,
         "items": [{
-            "id": row["id"],
+            "id": str(row["_id"]),
             "message": row["message"],
             "link": row["link"],
-            "is_read": bool(row["is_read"]),
+            "is_read": bool(row.get("is_read")),
             "at": helpers.pretty_date(row["created_at"]),
         } for row in rows],
     })
@@ -1213,8 +1242,9 @@ def api_notifications():
 @app.route("/api/notifications/read", methods=["POST"])
 @login_required
 def api_mark_notifications_read():
-    db.execute("UPDATE notifications SET is_read = 1 WHERE user_id = %s",
-               (current_user.id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    db_conn.notifications.update_many({"user_id": ObjectId(current_user.id)}, {"$set": {"is_read": True}})
     return jsonify({"ok": True, "unread": 0})
 
 
@@ -2070,16 +2100,16 @@ def admin_performance_detail(staff_id):
 @role_required("student")
 def api_live_dashboard():
     """Student dashboard counters — polled every 20 s by live.js."""
-    rows = db.query_all(
-        "SELECT status, deadline FROM complaints WHERE user_id = %s",
-        (current_user.id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    rows = list(db_conn.complaints.find({"user_id": ObjectId(current_user.id)}, {"status": 1, "deadline": 1}))
     now = helpers.now_str()
     total    = len(rows)
-    open_c   = sum(1 for r in rows if r["status"] not in config.CLOSED_STATUSES)
-    resolved = sum(1 for r in rows if r["status"] in ("Resolved", "Closed"))
+    open_c   = sum(1 for r in rows if r.get("status") not in config.CLOSED_STATUSES)
+    resolved = sum(1 for r in rows if r.get("status") in ("Resolved", "Closed"))
     breached = sum(1 for r in rows
-                   if r["status"] not in config.CLOSED_STATUSES
-                   and r["deadline"] and r["deadline"] < now)
+                   if r.get("status") not in config.CLOSED_STATUSES
+                   and r.get("deadline") and r["deadline"] < now)
     return jsonify(total=total, open=open_c, resolved=resolved, breached=breached)
 
 
@@ -2088,15 +2118,16 @@ def api_live_dashboard():
 @role_required("admin")
 def api_live_admin_stats():
     """Admin dashboard counters — polled every 20 s by live.js."""
-    rows = db.query_all("SELECT status, deadline FROM complaints")
+    db_conn = db.get_db()
+    rows = list(db_conn.complaints.find({}, {"status": 1, "deadline": 1}))
     now  = helpers.now_str()
     all_c       = len(rows)
-    pending     = sum(1 for r in rows if r["status"] == "Pending")
-    in_progress = sum(1 for r in rows if r["status"] == "In Progress")
-    resolved    = sum(1 for r in rows if r["status"] in ("Resolved", "Closed"))
+    pending     = sum(1 for r in rows if r.get("status") == "Pending")
+    in_progress = sum(1 for r in rows if r.get("status") == "In Progress")
+    resolved    = sum(1 for r in rows if r.get("status") in ("Resolved", "Closed"))
     breached    = sum(1 for r in rows
-                      if r["status"] not in config.CLOSED_STATUSES
-                      and r["deadline"] and r["deadline"] < now)
+                      if r.get("status") not in config.CLOSED_STATUSES
+                      and r.get("deadline") and r["deadline"] < now)
     return jsonify(all=all_c, pending=pending, in_progress=in_progress,
                    resolved=resolved, breached=breached)
 
@@ -2106,16 +2137,16 @@ def api_live_admin_stats():
 @role_required("staff")
 def api_live_staff_stats():
     """Staff dashboard counters — polled every 20 s by live.js."""
-    rows = db.query_all(
-        "SELECT status, deadline FROM complaints WHERE assigned_to = %s",
-        (current_user.id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    rows = list(db_conn.complaints.find({"assigned_to": ObjectId(current_user.id)}, {"status": 1, "deadline": 1}))
     now  = helpers.now_str()
     total    = len(rows)
-    open_c   = sum(1 for r in rows if r["status"] not in config.CLOSED_STATUSES)
-    resolved = sum(1 for r in rows if r["status"] in ("Resolved", "Closed"))
+    open_c   = sum(1 for r in rows if r.get("status") not in config.CLOSED_STATUSES)
+    resolved = sum(1 for r in rows if r.get("status") in ("Resolved", "Closed"))
     breached = sum(1 for r in rows
-                   if r["status"] not in config.CLOSED_STATUSES
-                   and r["deadline"] and r["deadline"] < now)
+                   if r.get("status") not in config.CLOSED_STATUSES
+                   and r.get("deadline") and r["deadline"] < now)
     return jsonify(total=total, open=open_c, resolved=resolved, breached=breached)
 
 

@@ -349,3 +349,26 @@ def notify_escalation(admin_email, ticket_code, subject, level_label,
     send_async(admin_email,
                "[ESCALATION] " + ticket_code + " — " + level_label + " — CHARUSAT",
                html)
+
+def notify_password_reset(user_email, reset_link):
+    """Email the password reset link to the user."""
+    inner = """
+<p style="margin:0 0 14px;color:#334155">Hello,</p>
+<p style="margin:0 0 16px;color:#334155">
+  You recently requested to reset your password for your Grievance360 account.
+  Click the button below to proceed.
+</p>
+<p style="margin:0;font-size:.85rem;color:#64748b">
+  If you did not request a password reset, please ignore this email.
+  This password reset is only valid for the next 1 hour.
+</p>
+"""
+    html = _wrap(
+        "Password Reset Request",
+        inner,
+        action_url=reset_link,
+        action_label="Reset Password",
+    )
+    send_async(user_email,
+               "Password Reset Request — Grievance360",
+               html)

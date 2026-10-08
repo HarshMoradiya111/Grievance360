@@ -46,10 +46,9 @@ def _send(to_addr, subject, html_body):
 
 
 def send_async(to_addr, subject, html_body):
-    """Queue an email on a daemon thread and return immediately."""
-    t = threading.Thread(target=_send, args=(to_addr, subject, html_body),
-                         daemon=True)
-    t.start()
+    """Queue an email on a daemon thread (Removed for Vercel compatibility)."""
+    # Vercel freezes background threads, so we must send synchronously!
+    _send(to_addr, subject, html_body)
 
 
 # ---------------------------------------------------------------------------

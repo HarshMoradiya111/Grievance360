@@ -108,51 +108,67 @@ def inject_globals():
 # ===========================================================================
 def log_status(complaint_id, old_status, new_status, remark, changed_by):
     """Write one row into the audit trail. Called on EVERY status change."""
-    db.execute(
-        "INSERT INTO complaint_status_history "
-        "(complaint_id, old_status, new_status, remark, changed_by, created_at) "
-        "VALUES (%s, %s, %s, %s, %s, %s)",
-        (complaint_id, old_status, new_status, remark, changed_by,
-         helpers.now_str()),
-    )
-
+    db_conn = db.get_db()
+    db_conn.complaint_status_history.insert_one({
+        "complaint_id": complaint_id,
+        "old_status": old_status,
+        "new_status": new_status,
+        "remark": remark,
+        "changed_by": changed_by,
+        "created_at": helpers.now_str()
+    })
 
 def notify(user_id, message, link=None, complaint_id=None):
     """Drop a notification for a user. Safe to call with user_id=None."""
     if not user_id:
         return
-    db.execute(
-        "INSERT INTO notifications "
-        "(user_id, complaint_id, message, link, is_read, created_at) "
-        "VALUES (%s, %s, %s, %s, 0, %s)",
-        (user_id, complaint_id, message, link, helpers.now_str()),
-    )
+    db_conn = db.get_db()
+    db_conn.notifications.insert_one({
+        "user_id": user_id,
+        "complaint_id": complaint_id,
+        "message": message,
+        "link": link,
+        "is_read": False,
+        "created_at": helpers.now_str()
+    })
 
 
 def get_complaint_or_404(ticket_code=None, complaint_id=None):
-    """Fetch one complaint joined to the names it needs for display."""
-    sql = (
-        "SELECT c.*, "
-        "       cat.name  AS category_name, "
-        "       cat.priority_weight, "
-        "       cat.sla_days, "
-        "       d.name    AS department_name, "
-        "       u.name    AS student_name, "
-        "       u.email   AS student_email, "
-        "       s.name    AS assigned_name "
-        "FROM complaints c "
-        "JOIN categories cat      ON cat.id = c.category_id "
-        "LEFT JOIN departments d  ON d.id   = c.department_id "
-        "JOIN users u             ON u.id   = c.user_id "
-        "LEFT JOIN users s        ON s.id   = c.assigned_to "
-    )
-    if ticket_code is not None:
-        row = db.query_one(sql + "WHERE c.ticket_code = %s", (ticket_code,))
-    else:
-        row = db.query_one(sql + "WHERE c.id = %s", (complaint_id,))
-    if row is None:
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    query = {}
+    if ticket_code:
+        query['ticket_code'] = ticket_code
+    elif complaint_id:
+        query['_id'] = ObjectId(complaint_id) if isinstance(complaint_id, str) else complaint_id
+
+    # We need to lookup category, department, user, assigned_to
+    cursor = db_conn.complaints.aggregate([
+        {'': query},
+        {'': {'from': 'categories', 'localField': 'category_id', 'foreignField': '_id', 'as': 'cat'}},
+        {'': {'from': 'departments', 'localField': 'department_id', 'foreignField': '_id', 'as': 'dept'}},
+        {'': {'from': 'users', 'localField': 'user_id', 'foreignField': '_id', 'as': 'student'}},
+        {'': {'from': 'users', 'localField': 'assigned_to', 'foreignField': '_id', 'as': 'assigned'}}
+    ])
+    try:
+        c = next(cursor)
+    except StopIteration:
         abort(404)
-    return row
+        
+    c['id'] = str(c['_id'])
+    cat = c.get('cat', [{}])[0] if c.get('cat') else {}
+    dept = c.get('dept', [{}])[0] if c.get('dept') else {}
+    student = c.get('student', [{}])[0] if c.get('student') else {}
+    assigned = c.get('assigned', [{}])[0] if c.get('assigned') else {}
+    
+    c['category_name'] = cat.get('name')
+    c['priority_weight'] = cat.get('priority_weight')
+    c['sla_days'] = cat.get('sla_days')
+    c['department_name'] = dept.get('name')
+    c['student_name'] = student.get('name')
+    c['student_email'] = student.get('email')
+    c['assigned_name'] = assigned.get('name')
+    return c
 
 
 def can_view(complaint):
@@ -448,8 +464,11 @@ def raise_complaint():
         )
         return redirect(url_for("profile"))
 
-    categories = db.query_all(
-        "SELECT id, name, sla_days, priority_weight FROM categories ORDER BY name")
+    db_conn = db.get_db()
+    categories = list(db_conn.categories.find({}, {"name": 1, "sla_days": 1, "priority_weight": 1}).sort("name", 1))
+    # Make sure to stringify IDs for templates
+    for cat in categories:
+        cat["id"] = str(cat["_id"])
 
     if request.method == "POST":
         category_id = request.form.get("category_id", "")
@@ -457,8 +476,8 @@ def raise_complaint():
         description = request.form.get("description", "").strip()
         is_anonymous = 1 if request.form.get("is_anonymous") else 0
 
-        category = db.query_one(
-            "SELECT * FROM categories WHERE id = %s", (category_id,))
+        from bson.objectid import ObjectId
+        category = db_conn.categories.find_one({"_id": ObjectId(category_id)}) if category_id else None
 
         errors = []
         if category is None:
@@ -479,42 +498,60 @@ def raise_complaint():
                                    categories=categories, form=request.form)
 
         created_at = helpers.now_str()
-        deadline = helpers.add_days(created_at, category["sla_days"])
+        deadline = helpers.add_days(created_at, category.get("sla_days", 5))
 
-        # The ticket code has to match the row id, so we insert with a
-        # placeholder code and immediately set the real one.
-        complaint_id = db.execute(
-            "INSERT INTO complaints "
-            "(ticket_code, user_id, category_id, department_id, subject, "
-            " description, attachment, is_anonymous, status, priority_score, "
-            " reopen_count, created_at, updated_at, deadline) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pending', %s, 0, "
-            "        %s, %s, %s)",
-            ("PENDING", current_user.id, category["id"], category.get("department_id"),
-             subject, description, attachment, is_anonymous,
-             helpers.priority_score(category["priority_weight"], created_at, 0),
-             created_at, created_at, deadline),
-        )
+        # Insert complaint into MongoDB
+        complaint_doc = {
+            "ticket_code": "PENDING",
+            "user_id": ObjectId(current_user.id),
+            "category_id": category["_id"],
+            "department_id": category.get("department_id"),
+            "subject": subject,
+            "description": description,
+            "attachment": attachment,
+            "is_anonymous": is_anonymous,
+            "status": "Pending",
+            "priority_score": helpers.priority_score(category.get("priority_weight", 1), created_at, 0),
+            "reopen_count": 0,
+            "created_at": created_at,
+            "updated_at": created_at,
+            "deadline": deadline
+        }
+        res = db_conn.complaints.insert_one(complaint_doc)
+        complaint_id = str(res.inserted_id)
 
-        ticket_code = helpers.make_ticket_code(complaint_id - 1)
-        db.execute("UPDATE complaints SET ticket_code = %s WHERE id = %s",
-                   (ticket_code, complaint_id))
+        # In MongoDB, we don't have a reliable auto-increment integer ID to make the ticket code.
+        # We can use the last 6 chars of the ObjectID.
+        ticket_code = helpers.make_ticket_code(int(complaint_id[-6:], 16))
+        db_conn.complaints.update_one({"_id": res.inserted_id}, {"$set": {"ticket_code": ticket_code}})
 
-        log_status(complaint_id, None, "Pending",
-                   "Complaint submitted by student.", current_user.id)
+        # log_status is still tied to SQL in app.py unless migrated, but we will migrate it locally here or leave it.
+        # Wait, if log_status uses SQL, it will CRASH. So I must inline the MongoDB insert for status history.
+        db_conn.complaint_status_history.insert_one({
+            "complaint_id": res.inserted_id,
+            "old_status": None,
+            "new_status": "Pending",
+            "remark": "Complaint submitted by student.",
+            "changed_by": ObjectId(current_user.id),
+            "created_at": created_at
+        })
 
         # Tell every admin a new complaint landed.
-        for admin in db.query_all("SELECT id FROM users WHERE role = 'admin'"):
-            notify(admin["id"],
-                   "New complaint %s: %s" % (ticket_code, subject[:50]),
-                   url_for("track_complaint", ticket_code=ticket_code),
-                   complaint_id)
+        admins = db_conn.users.find({"role": "admin"})
+        for admin in admins:
+            # Inline notify to MongoDB
+            db_conn.notifications.insert_one({
+                "user_id": admin["_id"],
+                "message": "New complaint %s: %s" % (ticket_code, subject[:50]),
+                "link": url_for("track_complaint", ticket_code=ticket_code),
+                "is_read": False,
+                "created_at": helpers.now_str()
+            })
 
         # Email confirmation to student
-        student_row = db.query_one("SELECT * FROM users WHERE id = %s",
-                                   (current_user.id,))
+        student_row = db_conn.users.find_one({"_id": ObjectId(current_user.id)})
         mail.notify_complaint_submitted(
-            student_email=student_row["email"],
+            student_email=student_row.get("email"),
             student_name=student_row["name"],
             ticket_code=ticket_code,
             subject=subject,
@@ -537,27 +574,41 @@ def track_complaint(ticket_code):
         flash("You are not allowed to view that complaint.", "danger")
         return redirect(url_for("home_for_role"))
 
-    history = db.query_all(
-        "SELECT h.*, u.name AS changed_by_name "
-        "FROM complaint_status_history h "
-        "LEFT JOIN users u ON u.id = h.changed_by "
-        "WHERE h.complaint_id = %s ORDER BY h.created_at ASC, h.id ASC",
-        (complaint["id"],),
-    )
-    comments = db.query_all(
-        "SELECT cm.*, u.name AS author_name, u.role AS author_role "
-        "FROM comments cm JOIN users u ON u.id = cm.user_id "
-        "WHERE cm.complaint_id = %s ORDER BY cm.created_at ASC",
-        (complaint["id"],),
-    )
-    rating = db.query_one(
-        "SELECT * FROM feedback WHERE complaint_id = %s", (complaint["id"],))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    # History
+    history_cursor = db_conn.complaint_status_history.aggregate([
+        {"$match": {"complaint_id": ObjectId(complaint["id"])}},
+        {"$lookup": {"from": "users", "localField": "changed_by", "foreignField": "_id", "as": "u"}},
+        {"$sort": {"created_at": 1, "_id": 1}}
+    ])
+    history = []
+    for h in history_cursor:
+        u = h.get("u", [{}])[0] if h.get("u") else {}
+        h["changed_by_name"] = u.get("name")
+        history.append(h)
+        
+    # Comments
+    comments_cursor = db_conn.comments.aggregate([
+        {"$match": {"complaint_id": ObjectId(complaint["id"])}},
+        {"$lookup": {"from": "users", "localField": "user_id", "foreignField": "_id", "as": "u"}},
+        {"$sort": {"created_at": 1}}
+    ])
+    comments = []
+    for cm in comments_cursor:
+        u = cm.get("u", [{}])[0] if cm.get("u") else {}
+        cm["author_name"] = u.get("name")
+        cm["author_role"] = u.get("role")
+        comments.append(cm)
+        
+    rating = db_conn.feedback.find_one({"complaint_id": ObjectId(complaint["id"])})
 
     return render_template("student/track.html", complaint=complaint,
                            history=history, comments=comments, rating=rating)
 
 
-@app.route("/complaint/<int:complaint_id>/comment", methods=["POST"])
+@app.route("/complaint/<complaint_id>/comment", methods=["POST"])
 @login_required
 def add_comment(complaint_id):
     complaint = get_complaint_or_404(complaint_id=complaint_id)
@@ -568,11 +619,14 @@ def add_comment(complaint_id):
     if not message:
         flash("Comment cannot be empty.", "warning")
     else:
-        db.execute(
-            "INSERT INTO comments (complaint_id, user_id, message, created_at) "
-            "VALUES (%s, %s, %s, %s)",
-            (complaint_id, current_user.id, message, helpers.now_str()),
-        )
+        from bson.objectid import ObjectId
+        db_conn = db.get_db()
+        db_conn.comments.insert_one({
+            "complaint_id": ObjectId(complaint_id),
+            "user_id": ObjectId(current_user.id),
+            "message": message,
+            "created_at": helpers.now_str()
+        })
         link = url_for("track_complaint", ticket_code=complaint["ticket_code"])
         # Tell the other side of the conversation, never yourself.
         if current_user.id == complaint["user_id"]:
@@ -1712,55 +1766,88 @@ def merge_complaint(complaint_id):
 def kb_list():
     q           = request.args.get("q", "").strip()
     category_id = request.args.get("category_id", "")
-    clauses, params = ["is_published = 1"], []
+    
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    match_stage = {"is_published": 1}
     if q:
-        clauses.append("(title LIKE %s OR body LIKE %s)")
-        p = "%" + q + "%"; params.extend([p, p])
+        match_stage["$or"] = [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"body": {"$regex": q, "$options": "i"}}
+        ]
     if category_id:
-        clauses.append("category_id = %s"); params.append(category_id)
-    articles = db.query_all(
-        "SELECT a.*, c.name AS category_name "
-        "FROM kb_articles a LEFT JOIN categories c ON c.id = a.category_id "
-        "WHERE " + " AND ".join(clauses) +
-        " ORDER BY a.helpful_yes DESC, a.views DESC", params)
-    categories = db.query_all("SELECT id, name FROM categories ORDER BY name")
+        match_stage["category_id"] = ObjectId(category_id) if len(category_id) == 24 else category_id
+        
+    articles_cursor = db_conn.kb_articles.aggregate([
+        {"$match": match_stage},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "c"}},
+        {"$sort": {"helpful_yes": -1, "views": -1}}
+    ])
+    
+    articles = []
+    for a in articles_cursor:
+        c = a.get("c", [{}])[0] if a.get("c") else {}
+        a["id"] = str(a["_id"])
+        a["category_name"] = c.get("name")
+        articles.append(a)
+        
+    categories = []
+    for c in db_conn.categories.find().sort("name", 1):
+        c["id"] = str(c["_id"])
+        categories.append(c)
+
     return render_template("student/kb_list.html", articles=articles,
                            categories=categories, q=q, category_id=category_id)
 
 
-@app.route("/kb/<int:article_id>")
+@app.route("/kb/<article_id>")
 @login_required
 def kb_article(article_id):
-    article = db.query_one(
-        "SELECT a.*, c.name AS category_name "
-        "FROM kb_articles a LEFT JOIN categories c ON c.id = a.category_id "
-        "WHERE a.id = %s AND a.is_published = 1", (article_id,))
-    if article is None: abort(404)
-    db.execute("UPDATE kb_articles SET views = views + 1 WHERE id=%s",
-               (article_id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    article_cursor = db_conn.kb_articles.aggregate([
+        {"$match": {"_id": ObjectId(article_id) if len(article_id) == 24 else article_id, "is_published": 1}},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "c"}}
+    ])
+    
+    try:
+        article = next(article_cursor)
+    except StopIteration:
+        abort(404)
+        
+    c = article.get("c", [{}])[0] if article.get("c") else {}
+    article["id"] = str(article["_id"])
+    article["category_name"] = c.get("name")
+
+    db_conn.kb_articles.update_one({"_id": article["_id"]}, {"$inc": {"views": 1}})
+    
     already_rated = False
     if current_user.is_authenticated and current_user.role == "student":
-        # Check session-level flag (SQLite has no per-user helpful table)
-        key = "kb_rated_%d" % article_id
+        key = "kb_rated_%s" % article_id
         from flask import session
         already_rated = session.get(key, False)
+        
     return render_template("student/kb_article.html", article=article,
                            already_rated=already_rated)
 
 
-@app.route("/kb/<int:article_id>/helpful", methods=["POST"])
+@app.route("/kb/<article_id>/helpful", methods=["POST"])
 @login_required
 def kb_helpful(article_id):
     from flask import session
-    key = "kb_rated_%d" % article_id
-    article = db.query_one("SELECT id FROM kb_articles WHERE id=%s AND is_published=1",
-                           (article_id,))
+    key = "kb_rated_%s" % article_id
+    
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    article = db_conn.kb_articles.find_one({"_id": ObjectId(article_id) if len(article_id) == 24 else article_id, "is_published": 1})
     if article is None: abort(404)
+    
     if not session.get(key):
         vote = request.form.get("vote", "no")
         col  = "helpful_yes" if vote == "yes" else "helpful_no"
-        db.execute("UPDATE kb_articles SET %s = %s + 1 WHERE id=%s" % (col, col, "%s"),
-                   (article_id,))
+        db_conn.kb_articles.update_one({"_id": article["_id"]}, {"$inc": {col: 1}})
         session[key] = True
         flash("Thank you for your feedback.", "success")
     else:
@@ -1840,15 +1927,32 @@ def admin_kb_toggle(article_id):
 def announcements():
     now = helpers.now_str()
     audience = current_user.role
-    rows = db.query_all(
-        "SELECT a.*, c.name AS category_name "
-        "FROM announcements a "
-        "LEFT JOIN categories c ON c.id = a.category_id "
-        "WHERE a.is_active = 1 "
-        "AND a.starts_at <= %s AND a.ends_at >= %s "
-        "AND (a.audience_role = 'all' OR a.audience_role = %s) "
-        "ORDER BY a.starts_at DESC",
-        (now, now, audience))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    match_stage = {
+        "is_active": 1,
+        "starts_at": {"$lte": now},
+        "ends_at": {"$gte": now},
+        "$or": [
+            {"audience_role": "all"},
+            {"audience_role": audience}
+        ]
+    }
+    
+    rows_cursor = db_conn.announcements.aggregate([
+        {"$match": match_stage},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "c"}},
+        {"$sort": {"starts_at": -1}}
+    ])
+    
+    rows = []
+    for r in rows_cursor:
+        c = r.get("c", [{}])[0] if r.get("c") else {}
+        r["id"] = str(r["_id"])
+        r["category_name"] = c.get("name")
+        rows.append(r)
+        
     return render_template("announcements.html", announcements=rows)
 
 
@@ -1858,20 +1962,40 @@ def api_announcements():
     category_id = request.args.get("category_id", "")
     now = helpers.now_str()
     audience = current_user.role
-    clauses = [
-        "a.is_active = 1",
-        "a.starts_at <= %s", "a.ends_at >= %s",
-        "(a.audience_role = 'all' OR a.audience_role = %s)",
-    ]
-    params = [now, now, audience]
+    
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    match_stage = {
+        "is_active": 1,
+        "starts_at": {"$lte": now},
+        "ends_at": {"$gte": now},
+        "$or": [
+            {"audience_role": "all"},
+            {"audience_role": audience}
+        ]
+    }
     if category_id:
-        clauses.append("(a.category_id = %s OR a.category_id IS NULL)")
-        params.append(category_id)
-    rows = db.query_all(
-        "SELECT a.title, a.body "
-        "FROM announcements a WHERE " + " AND ".join(clauses) +
-        " ORDER BY a.starts_at DESC LIMIT 3", params)
-    return jsonify({"items": [dict(r) for r in rows]})
+        # In SQL it had OR a.category_id IS NULL
+        cat_id = ObjectId(category_id) if len(category_id) == 24 else category_id
+        match_stage["$and"] = [
+            {"$or": [
+                {"category_id": cat_id},
+                {"category_id": None},
+                {"category_id": ""}
+            ]}
+        ]
+        
+    rows_cursor = db_conn.announcements.find(match_stage).sort("starts_at", -1).limit(3)
+    
+    rows = []
+    for r in rows_cursor:
+        rows.append({
+            "title": r.get("title"),
+            "body": r.get("body")
+        })
+        
+    return jsonify({"items": rows})
 
 
 @app.route("/admin/announcements")
@@ -2199,7 +2323,10 @@ CHARUSAT_SEMESTERS = [
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
-    user = db.query_one("SELECT * FROM users WHERE id = %s", (current_user.id,))
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    user = db_conn.users.find_one({"_id": ObjectId(current_user.id)})
+    if user: user["id"] = str(user["_id"])
 
     if request.method == "POST":
         name               = request.form.get("name", "").strip()
@@ -2230,11 +2357,13 @@ def profile():
                                    depts=CHARUSAT_STUDENT_DEPTS,
                                    semesters=CHARUSAT_SEMESTERS)
 
-        db.execute(
-            "UPDATE users SET name=%s, phone=%s, program=%s, enrollment_no=%s, "
-            "photo=%s, student_department=%s, semester=%s WHERE id=%s",
-            (name, phone, program, enrollment_no, photo_name,
-             student_department, semester, current_user.id),
+        db_conn.users.update_one(
+            {"_id": ObjectId(current_user.id)},
+            {"$set": {
+                "name": name, "phone": phone, "program": program, 
+                "enrollment_no": enrollment_no, "photo": photo_name,
+                "student_department": student_department, "semester": semester
+            }}
         )
         flash("Profile updated successfully.", "success")
         return redirect(url_for("profile"))

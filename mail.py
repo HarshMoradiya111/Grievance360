@@ -28,6 +28,29 @@ def _send(to_addr, subject, html_body):
     if not config.MAIL_ENABLED:
         return
 
+    # Try Resend API if Vercel blocks SMTP
+    import os
+    resend_key = os.environ.get('RESEND_API_KEY')
+    if resend_key:
+        import urllib.request, json
+        data = {
+            'from': config.MAIL_FROM,
+            'to': [to_addr],
+            'subject': subject,
+            'html': html_body
+        }
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=json.dumps(data).encode('utf-8'),
+            headers={'Authorization': f'Bearer {resend_key}', 'Content-Type': 'application/json'}
+        )
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            log.info("Mail sent via Resend API to %s — %s", to_addr, subject)
+            return
+        except Exception as exc:
+            log.warning("Resend API failed to %s: %s", to_addr, exc)
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"]    = config.MAIL_FROM

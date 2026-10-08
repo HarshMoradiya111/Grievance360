@@ -20,7 +20,7 @@ DB_ENGINE = "mongodb"
 UPLOAD_FOLDER_DEFAULT = None  # use the project-relative path below
 
 # Used when DB_ENGINE = "mongodb"
-MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://grievancecharusat_db_user:aAPfZE5SascLlP6x@cluster0.pmbehtz.mongodb.net/?appName=Cluster0")
 MONGO_DB = "grievance360"
 
 # ------------------------------------------------------------------- flask ---

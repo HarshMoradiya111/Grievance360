@@ -30,9 +30,16 @@ env/
 # Local test and verification scripts
 test_*.py
 
-# Generated documentation binaries
-docs/*.docx
-docs/*.pdf
+# Documentation, report generators and binaries
+docs/
+*.docx
+*.pdf
+
+# Internal planning and scratch markdown files (only README.md tracked)
+AUTOMATION_*.md
+DEMO_SCRIPT.md
+MODULES_TEST_REPORT.md
+TEST_CASES.md
 
 # Uploads (user-uploaded files — exclude from repo)
 static/uploads/*

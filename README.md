@@ -1,236 +1,175 @@
 # Grievance360
 
-**A Smart Grievance Redressal & Analytics Portal for Educational Institutions**
-MSc-IT Semester 3 project · Python + Flask + SQLite/MySQL + Bootstrap 5.3 + vanilla JS
-
-Students raise grievances from their phones, the system auto-routes them to the
-right department, staff work them through a tracked lifecycle, and the admin
-sees live analytics, SLA breaches and a priority queue.
+**A Smart Grievance Redressal, Intelligent Automation & Analytics Portal for Educational Institutions**  
+*Python 3.14 · Flask 3.1 · MongoDB Atlas (PyMongo) · Bootstrap 5.3 · Chart.js · Vanilla JS*
 
 ---
 
-## Quick start (3 commands)
+## Overview
 
+**Grievance360** is a modern, full-featured grievance redressal and workflow automation portal designed specifically for colleges and universities. It replaces traditional paper registers and unmonitored email inboxes with a transparent, statutorily compliant (UGC/AICTE) digital grievance lifecycle.
+
+Students file grievances across categories with optional anonymous reporting and file attachments. Behind the scenes, an **Intelligent Automation Engine** handles zero-touch staff assignment, fast-tracks emergencies, detects duplicates, monitors SLA deadlines via background daemons, fires pre-breach early warnings, and auto-closes resolved complaints.
+
+---
+
+## Key Modules & Autonomous Systems
+
+### 1. Student Portal & Grievance Intake
+- **Category-Based Filing:** Pre-configured SLA turnaround windows (e.g., 2 days for IT, 5 days for Academics).
+- **Anonymous Whistleblower Protection:** Masks student identity on all faculty screens while preserving secure notifications.
+- **Secure Evidence Uploads:** File validation for PNG, JPG, PDF, and DOCX with randomized 12-hex UUID filenames.
+- **Live Ticket Tracking (`GRV-YYYY-NNNN`):** Interactive status timeline, two-way dialogue comments, and 1-click CSAT star ratings.
+
+### 2. Intelligent Automation Engine (`automation.py`)
+- **Zero-Touch Staff Auto-Assignment:** Evaluates active staff ticket counts and instantly dispatches cases to the least-burdened officer.
+- **NLP Emergency & Anti-Ragging Fast-Track:** Automatically detects safety keywords (*ragging, harassment, assault, medical, fire*); sets priority to **100 (Critical)**, cuts SLA to **24 hours**, and triggers urgent alerts to Security and the Principal.
+- **Jaccard Duplicate Detection & Supporter Linkage:** Identifies similar active complaints ($J \ge 0.50$); auto-tags duplicates and links submitters as supporters ("Me Too" backers).
+- **Autonomous SLA Escalation Daemon:** Background sweep thread (`scheduler.py`) evaluates elapsed SLA ratios and elevates overdue tickets across Level 1 (Staff), Level 2 (HOD), and Level 3 (Dean).
+- **Predictive SLA Pre-Breach Early Warnings:** Proactive alerts dispatched to staff when a ticket hits 75% elapsed SLA without resolution.
+- **Stalled Ticket Nudge Engine:** Sends automated reminders when an assigned grievance sits for $\ge 48$ hours with zero staff activity.
+- **5-Day Grace Period Auto-Closure:** Automatically closes resolved tickets after 5 days if uncontested by the student.
+- **Post-Resolution CSAT Feedback Trigger:** Dispatches an automated 1-to-5 star feedback survey the instant a case is marked resolved.
+- **Multi-Reopen Escalation to Dean:** Re-routing grievances reopened $\ge 2$ times directly to the Dean / Institutional Ombudsperson.
+- **Campus Outage & Spike Anomaly Detector:** Flags sudden grievance bursts ($\ge 4$ complaints in 2 hours under the same category) and drafts public campus advisories.
+- **Executive Analytics Digest:** Compiles institutional health summaries on resolution velocity, SLA compliance, and recurring hotspots.
+- **Admin Automation Command Center (`/admin/automation`):** Live web dashboard to tune thresholds, toggle features, and trigger manual sweeps.
+
+### 3. Staff & Administrative Workspace
+- **Staff Queue:** Workload visibility, status transitions (`In Progress`, `Resolved`, `Rejected`), and audited remarks.
+- **Knowledge Base (`/kb`):** Searchable student self-service guides for deflecting common inquiries.
+- **Campus Notice Board (`/announcements`):** Official institutional bulletins and automated campus advisories.
+- **Analytics & Exports:** Real-time Chart.js dashboards, styled Excel `.xlsx` spreadsheets (`openpyxl`), and printable compliance PDF views.
+
+---
+
+## Quick Start (Local Setup)
+
+### 1. Clone & Install Dependencies
 ```bash
+git clone https://github.com/HarshMoradiya111/Grievance360.git
+cd Grievance360
 python -m pip install -r requirements.txt
 ```
 
+### 2. Configure Environment Variables
+Copy the example environment template to `.env`:
+```bash
+cp .env.example .env
+```
+Open `.env` and configure your credentials:
+```env
+MONGO_URI="mongodb+srv://<username>:<password>@cluster0.mongodb.net/?appName=Cluster0"
+MONGO_DB="grievance360"
+SECRET_KEY="your-secret-key-here"
+
+# Email Dispatch (Optional)
+MAIL_ENABLED="True"
+MAIL_SMTP="smtp.gmail.com"
+MAIL_PORT="587"
+MAIL_USER="your-email@gmail.com"
+MAIL_PASSWORD="your-16-char-google-app-password"
+MAIL_FROM="Grievance360 — CHARUSAT <your-email@gmail.com>"
+PORTAL_URL="http://127.0.0.1:5000"
+```
+
+### 3. Initialize Database & Seed Accounts
 ```bash
 python init_db.py
 ```
 
+### 4. Run the Application
 ```bash
 python app.py
 ```
+Open your browser and navigate to: **http://127.0.0.1:5000**
 
-Then open **http://127.0.0.1:5000**
+---
 
-Optional — load ~30 demo complaints so the dashboard and charts look full:
+## Demonstration Login Accounts
 
-```bash
-python database/sample_data.py
+| Role | Email | Password | Access Scope |
+|---|---|---|---|
+| **Administrator** | `admin@grievance360.edu` | `admin123` | Full system governance, automation center & analytics |
+| **Staff (IT Support)** | `it.staff@grievance360.edu` | `staff123` | Department assigned grievance queue & status updates |
+| **Staff (Maintenance)** | `maintenance.staff@grievance360.edu` | `staff123` | Maintenance grievance queue |
+| **Staff (Academics)** | `academics.staff@grievance360.edu` | `staff123` | Academic grievance queue |
+| **Staff (Hostel)** | `hostel.staff@grievance360.edu` | `staff123` | Hostel facility grievance queue |
+| **Student** | `harsh@student.edu` | `student123` | Student dashboard, raise grievance & tracking |
+| **Student** | `priya@student.edu` | `student123` | Student dashboard & tracking |
+
+*Students can also self-register for an account via `/register`.*
+
+---
+
+## Core Mathematical Algorithms
+
+### 1. Dynamic Priority Scoring
 ```
+Priority Score = (Category_Weight × 10)
+               + (Age_In_Days × 2)
+               + (Reopen_Count × 5)
+               + (Supporter_Count × 2)
+```
+- **Category Weight (1–5):** Ensures high-impact issues take precedence immediately.
+- **Age Factor:** Prevents starvation of older, low-priority issues.
+- **Emergency Override:** Emergency/ragging complaints immediately bypass formula calculation with a fixed score of `100`.
+
+### 2. SLA Elapsed Ratio & Escalation Window
+```
+Elapsed Ratio = (Current_Time - Created_Time) / (Deadline_Time - Created_Time)
+```
+- **Elapsed Ratio $\ge$ 0.75:** Dispatches proactive SLA Pre-Breach Early Warning to assigned staff.
+- **Elapsed Ratio $\ge$ 1.00:** Declares SLA breach and auto-escalates to the next administrative tier.
+
+### 3. Jaccard Text Token Similarity
+```
+J(A, B) = |Tokens(A) ∩ Tokens(B)| / |Tokens(A) ∪ Tokens(B)|
+```
+- When $J(A, B) \ge 0.50$ across complaints within the same category, the new ticket is linked as a duplicate and the submitter is added as a supporter.
 
 ---
 
-## Login accounts
-
-| Role | Email | Password |
-|---|---|---|
-| Admin | `admin@grievance360.edu` | `admin123` |
-| Staff (IT Support) | `it.staff@grievance360.edu` | `staff123` |
-| Staff (Maintenance) | `maintenance.staff@grievance360.edu` | `staff123` |
-| Staff (Academics) | `academics.staff@grievance360.edu` | `staff123` |
-| Staff (Hostel) | `hostel.staff@grievance360.edu` | `staff123` |
-| Student | `harsh@student.edu` | `student123` |
-| Student | `priya@student.edu` | `student123` |
-| Student | `arjun@student.edu` | `student123` |
-
-Students can also register themselves at `/register`. Staff and admin accounts
-are created by the administrator (seeded in `init_db.py`).
-
----
-
-## Switching to MySQL
-
-The project ships on SQLite so it runs with **zero setup**. Every SQL query is
-written in MySQL style with `%s` placeholders, so moving to MySQL changes
-**one line** and no queries at all.
-
-1. Install MySQL Server 8 and create the schema:
-   ```bash
-   mysql -u root -p < database/schema.sql
-   ```
-2. In `config.py` set:
-   ```python
-   DB_ENGINE = "mysql"
-   ```
-   and fill in `MYSQL_USER` / `MYSQL_PASSWORD`.
-3. Re-seed:
-   ```bash
-   python init_db.py
-   ```
-
-`PyMySQL` (already in `requirements.txt`) is a pure-Python driver, so there is
-nothing to compile — unlike `mysqlclient`, which needs Visual Studio build
-tools on Windows.
-
----
-
-## Project structure
+## Project Structure
 
 ```
 Grievance360/
-├── app.py                  # all routes, grouped by role
-├── config.py               # DB engine switch, upload rules, statuses
-├── db.py                   # connection + %s/? shim + query helpers
-├── helpers.py              # business logic (priority, SLA, auto-routing)
-├── init_db.py              # creates tables + seeds accounts
-├── requirements.txt
-├── database/
-│   ├── schema.sql          # MySQL schema (the one for your report)
-│   ├── schema_sqlite.sql   # same 8 tables, SQLite syntax
-│   ├── sample_data.py      # ~30 demo complaints with full history
-│   └── grievance360.db        # created by init_db.py
+├── app.py                  # All HTTP route definitions, role guards & controllers
+├── automation.py           # Intelligent Automation Engine (12 autonomous systems)
+├── scheduler.py            # Thread-safe periodic background sweep daemon
+├── config.py               # Environment configuration & .env auto-loader
+├── db.py                   # MongoDB Atlas cluster pool & SQL dual-engine shim
+├── helpers.py              # Algorithmic business logic (Priority, SLA, Ticket codes)
+├── init_db.py              # Database initialization & default seeder
+├── mail.py                 # Multi-channel notification engine (SMTP + HTML templates)
+├── requirements.txt        # Python package dependencies
+├── .env.example            # Environment variables template
+├── database/               # Database schemas and seed scripts
 ├── static/
-│   ├── css/style.css       # ALL shared layout + responsiveness
-│   ├── js/track.js         # live status polling (5s)
-│   ├── js/notify.js        # notification bell polling (15s)
-│   ├── js/charts.js        # Chart.js analytics
-│   └── uploads/            # complaint attachments
-└── templates/
-    ├── base.html           # the responsive shell every page extends
-    ├── partials/_macros.html
-    ├── student/  staff/  admin/
+│   ├── css/style.css       # Unified responsive styles & dark mode tokens
+│   ├── js/track.js         # Real-time status polling (5s)
+│   ├── js/notify.js        # Notification bell polling (15s)
+│   └── js/charts.js        # Chart.js analytics visualizations
+└── templates/              # Jinja2 responsive templates (Bootstrap 5.3)
+    ├── base.html           # Master layout with responsive mobile navigation
+    ├── admin/              # Administrator dashboards, automation center & reports
+    ├── staff/              # Faculty investigation queues & update modals
+    ├── student/            # Grievance filing, tracking & knowledge base
+    └── partials/           # Reusable UI macros
 ```
 
 ---
 
-## Database — 8 tables
+## Security & Verification Standards
 
-| Table | Purpose |
-|---|---|
-| `departments` | Offices that resolve complaints |
-| `categories` | Complaint types, each with its own `sla_days` and `priority_weight` |
-| `users` | Students, staff and admins in one table, separated by `role` |
-| `complaints` | The core record, with ticket code, status, deadline, priority |
-| `complaint_status_history` | Audit trail — one row per status change |
-| `comments` | Student ↔ staff conversation on a ticket |
-| `feedback` | Star rating, one per complaint, only after resolution |
-| `notifications` | Feeds the live bell in the navbar |
-
-Indexes on `ticket_code`, `status`, `category_id`, `email`, `deadline`,
-`assigned_to`, `department_id`, plus a composite on `(user_id, is_read)` for
-the notification bell.
+- **Salted Password Hashing:** PBKDF2 with SHA-256 via Werkzeug.
+- **Two-Stage Authorization:** Role-based gating (`@role_required`) paired with record ownership checks (`can_view()`).
+- **Cryptographic Reset Tokens:** Single-use 32-byte URL-safe reset tokens with 60-minute expiry.
+- **SQL / NoSQL Injection Defense:** Parameterized queries for SQL and typed dictionary expressions for PyMongo.
+- **Credential Protection:** Zero hardcoded credentials in tracked code; all secrets isolated in untracked `.env`.
 
 ---
 
-## The two key formulas
+## License
 
-**Priority score** — `helpers.priority_score()`
-
-```
-priority_score = (category.priority_weight × 10)
-               + (days_since_created × 2)
-               + (reopen_count × 5)
-```
-
-Higher = more urgent. The admin priority queue and the staff dashboard both
-sort on this, descending. Because the age term keeps growing, an old
-low-priority complaint eventually overtakes a fresh high-priority one — nothing
-is allowed to sit forgotten.
-
-**SLA breach check** — `helpers.is_breached()`
-
-```
-if status NOT IN ('Resolved','Closed','Rejected') AND NOW() > deadline:
-    → SLA breached (shown in the red list)
-```
-
-`deadline` is set at submission time as `created_at + category.sla_days`.
-Reopening a complaint restarts the clock.
-
----
-
-## Feature map
-
-| Feature | Where |
-|---|---|
-| Registration + hashed passwords | `app.py` → `register()` |
-| Login / logout / sessions | `app.py` → `login()`, flask-login |
-| Role-based access control | `app.py` → `role_required()` decorator |
-| Forgot / reset password | `app.py` → `forgot_password()`, `reset_password()` |
-| Raise complaint + upload + anonymous | `app.py` → `raise_complaint()` |
-| Ticket code `GRV-2026-####` | `helpers.make_ticket_code()` |
-| SLA deadline on submit | `helpers.add_days()` |
-| Student dashboard (cards) | `templates/student/dashboard.html` |
-| Track page + timeline | `templates/student/track.html` |
-| Auto-routing by keywords | `helpers.suggest_department()` |
-| Assign to staff + workload | `app.py` → `assign_complaint()` |
-| Staff dashboard + status update | `app.py` → `staff_dashboard()`, `update_status()` |
-| Comments | `app.py` → `add_comment()` |
-| Feedback + star rating | `app.py` → `submit_feedback()` |
-| Reopen | `app.py` → `reopen_complaint()` |
-| Priority scoring + queue | `helpers.priority_score()`, admin dashboard |
-| JSON status API | `/api/complaint/<code>/status` |
-| Live polling (no reload) | `static/js/track.js` |
-| Notifications + live bell | `/api/notifications`, `static/js/notify.js` |
-| Analytics (GROUP BY) | `app.py` → `admin_analytics()` |
-| Avg resolution time per dept | `admin_analytics()`, computed in Python |
-| SLA breach report | Admin dashboard + analytics page |
-| Top recurring issue | `admin_analytics()` → `top_issue` |
-| Charts (pie/bar/line) | `static/js/charts.js` |
-| Search, filters, pagination | `app.py` → `_build_where()`, `admin_complaints()` |
-| Export Excel | `/admin/export/excel` (openpyxl) |
-| Export PDF | `/admin/export/pdf` (print-to-PDF view) |
-
----
-
-## Mobile-first design
-
-98% of users are students on phones, so the app is built phone-first:
-
-- One `base.html` owns all responsiveness; every page extends it.
-- Bottom navigation bar on phones (thumb-reachable), full navbar on desktop.
-- Admin tables become **stacked cards** below 768px instead of scrolling sideways.
-- All inputs are `16px` — smaller fonts make iOS Safari zoom on focus.
-- Every button and link is at least 44×44px.
-- Filters collapse into an accordion on phones.
-- Charts use `responsive: true` + `maintainAspectRatio: false` inside a
-  fixed-height container, one per row on mobile.
-- `overflow-x: hidden` on `html, body` — no horizontal page scroll anywhere.
-
-Tested at 320, 360, 768, 1024 and 1440px.
-
----
-
-## Security
-
-- Passwords hashed with Werkzeug (`generate_password_hash` / `check_password_hash`)
-- **Every** SQL query is parameterized — no user input is ever formatted into a
-  query string, including the dynamic filters in `_build_where()`
-- Role decorators on every protected route
-- Ownership checks (`can_view()`) so students only see their own complaints and
-  staff only see their department's
-- Upload restrictions: extension allow-list + 5 MB cap; stored filenames are
-  randomized so uploads cannot overwrite each other
-- Login errors are deliberately vague, and the forgot-password page gives the
-  same response whether or not the email exists — neither can be used to
-  discover which accounts are registered
-- Jinja2 auto-escapes all output; the notification JS escapes text before
-  inserting it into the DOM
-
----
-
-## Notes
-
-- Password reset shows the link on screen instead of emailing it, since there
-  is no SMTP server in a college lab. The token logic is identical to a real
-  email flow — only the delivery differs.
-- PDF export opens a print-optimized page; choose "Save as PDF" in the print
-  dialog. This keeps the project dependency-free.
-- `debug=True` in `app.py` is for development. Turn it off before any real
-  deployment, and change `SECRET_KEY` in `config.py`.
-
-See [TEST_CASES.md](TEST_CASES.md) for the test-case table and
-[DEMO_SCRIPT.md](DEMO_SCRIPT.md) for the viva click-path.
+Developed as an academic software engineering project for higher education institutions. Released under the MIT License.

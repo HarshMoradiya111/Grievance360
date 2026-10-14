@@ -10,6 +10,7 @@ from flask import (Flask, abort, flash, jsonify, redirect, render_template,
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from werkzeug.security import check_password_hash, generate_password_hash
+from bson.objectid import ObjectId
 
 import config
 import db
@@ -52,7 +53,6 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    from bson.objectid import ObjectId
     try:
         row = db.get_db().users.find_one({"_id": ObjectId(user_id), "is_active": True})
         if row:

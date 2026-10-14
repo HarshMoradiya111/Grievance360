@@ -9,7 +9,7 @@ Contains rule-based deterministic algorithms and background lifecycle workers:
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson.objectid import ObjectId
 
 import config
@@ -550,17 +550,233 @@ def check_stalled_complaints(db_conn):
 
 def run_lifecycle_sweep(db_conn):
     """
-    Consolidated runner that executes all Phase 2 lifecycle automation routines.
-    Can be scheduled in background thread or triggered via secure API endpoint.
+    Consolidated runner that executes all lifecycle automation routines:
+      - Phase 2: Escalations, SLA early warnings, stalled ticket nudges.
+      - Phase 3: 5-day grace period auto-closure of resolved tickets.
     """
     esc_result = run_automated_escalations(db_conn)
     sla_result = check_sla_pre_breach_warnings(db_conn)
     stall_result = check_stalled_complaints(db_conn)
+    autoclose_result = auto_close_resolved_complaints(db_conn)
 
     return {
         "timestamp": helpers.now_str(),
         "escalations": esc_result,
         "sla_warnings": sla_result,
-        "stalled_nudges": stall_result
+        "stalled_nudges": stall_result,
+        "auto_closures": autoclose_result
     }
+
+
+# ===========================================================================
+# PHASE 3: POST-RESOLUTION & REOPEN PROTECTION
+# ===========================================================================
+
+def auto_close_resolved_complaints(db_conn):
+    """
+    Grace Period Auto-Closure:
+    If a ticket remains 'Resolved' for AUTO_CLOSE_DAYS (default 5 days)
+    without student reopen or comment, automatically transitions to 'Closed'.
+    """
+    grace_days = getattr(config, "AUTO_CLOSE_DAYS", 5)
+    now_dt = datetime.now()
+    cutoff_dt = now_dt - timedelta(days=grace_days)
+    cutoff_str = cutoff_dt.strftime(helpers.DT_FORMAT)
+    now_str = helpers.now_str()
+
+    resolved_tickets = list(db_conn.complaints.find({
+        "status": "Resolved",
+        "resolved_at": {"$lte": cutoff_str}
+    }))
+
+    closed_count = 0
+    for c in resolved_tickets:
+        closed_count += 1
+        db_conn.complaints.update_one(
+            {"_id": c["_id"]},
+            {"$set": {
+                "status": "Closed",
+                "auto_closed_at": now_str,
+                "updated_at": now_str
+            }}
+        )
+
+        # Audit trail history
+        db_conn.complaint_status_history.insert_one({
+            "complaint_id": c["_id"],
+            "old_status": "Resolved",
+            "new_status": "Closed",
+            "remark": f"AUTOMATION: Automatically closed after {grace_days}-day resolution grace period.",
+            "changed_by": None,
+            "is_automated": True,
+            "created_at": now_str
+        })
+
+        # Notify student
+        track_url = f"/complaint/{c.get('ticket_code')}"
+        db_conn.notifications.insert_one({
+            "user_id": c["user_id"],
+            "message": f"🔒 Ticket {c.get('ticket_code')} has been closed after the {grace_days}-day resolution grace period.",
+            "link": track_url,
+            "is_read": False,
+            "created_at": now_str
+        })
+
+        # Email student closure confirmation
+        student = db_conn.users.find_one({"_id": c["user_id"]})
+        if student and student.get("email"):
+            mail.send_async(
+                student["email"],
+                f"[Ticket Closed] {c.get('ticket_code')} — Resolution Finalized",
+                f"<p>Dear <strong>{student.get('name', 'Student')}</strong>,</p>"
+                f"<p>Your complaint <strong>{c.get('ticket_code')}</strong> ({c.get('subject')}) "
+                f"has been automatically marked <strong>Closed</strong> following the {grace_days}-day resolution period.</p>"
+                f"<p>Thank you for using the Grievance360 portal.</p>"
+            )
+
+    return {"checked": len(resolved_tickets), "auto_closed": closed_count}
+
+
+def trigger_post_resolution_feedback(db_conn, complaint_id):
+    """
+    Automated CSAT / Feedback Survey Prompt:
+    Fires the moment a complaint transitions to 'Resolved'.
+    Dispatches an in-app prompt and email with a direct 1-click rating link.
+    """
+    c_oid = ObjectId(complaint_id) if not isinstance(complaint_id, ObjectId) else complaint_id
+    complaint = db_conn.complaints.find_one({"_id": c_oid})
+    if not complaint:
+        return False
+
+    now_str = helpers.now_str()
+
+    # Check if feedback was already provided
+    existing_fb = db_conn.feedback.find_one({"complaint_id": c_oid})
+    if existing_fb:
+        return False
+
+    db_conn.complaints.update_one(
+        {"_id": c_oid},
+        {"$set": {"feedback_requested": True, "feedback_requested_at": now_str}}
+    )
+
+    track_url = f"/complaint/{complaint.get('ticket_code')}"
+
+    # In-app notification with rating prompt
+    db_conn.notifications.insert_one({
+        "user_id": complaint["user_id"],
+        "message": f"🌟 Please rate your experience! Your complaint {complaint.get('ticket_code')} has been resolved.",
+        "link": track_url,
+        "is_read": False,
+        "created_at": now_str
+    })
+
+    # Status history log
+    db_conn.complaint_status_history.insert_one({
+        "complaint_id": c_oid,
+        "old_status": complaint.get("status"),
+        "new_status": complaint.get("status"),
+        "remark": "AUTOMATION: Post-resolution feedback survey triggered to student.",
+        "changed_by": None,
+        "is_automated": True,
+        "created_at": now_str
+    })
+
+    # Branded interactive feedback email
+    student = db_conn.users.find_one({"_id": complaint["user_id"]})
+    if student and student.get("email"):
+        portal_base = getattr(config, "PORTAL_URL", "https://grievance360portal.vercel.app")
+        survey_link = f"{portal_base}/complaint/{complaint.get('ticket_code')}"
+        mail.send_async(
+            student["email"],
+            f"[Rate Resolution] How did we do with ticket {complaint.get('ticket_code')}?",
+            f"<p>Dear <strong>{student.get('name', 'Student')}</strong>,</p>"
+            f"<p>Your complaint <strong>{complaint.get('ticket_code')}</strong> has been marked as <strong>Resolved</strong>.</p>"
+            f"<p>Please take 10 seconds to share your feedback. Your rating helps evaluate institutional staff performance:</p>"
+            f"<p style='text-align:center;margin:24px 0'>"
+            f"<a href='{survey_link}' style='background:#5b6ea8;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600'>"
+            f"⭐ Submit Star Rating & Feedback</a></p>"
+        )
+
+    return True
+
+
+def handle_multi_reopen_escalation(db_conn, complaint_id, student_id):
+    """
+    Chronic Grievance / High Dissatisfaction Protection:
+    If a grievance is reopened 2 or more times, it bypasses departmental staff
+    and automatically escalates to Level 3 (Principal / Dean / Ombudsperson).
+    """
+    c_oid = ObjectId(complaint_id) if not isinstance(complaint_id, ObjectId) else complaint_id
+    complaint = db_conn.complaints.find_one({"_id": c_oid})
+    if not complaint:
+        return False
+
+    reopen_count = complaint.get("reopen_count", 0)
+    if reopen_count < 2:
+        return False  # Normal single reopen handling applies
+
+    now_str = helpers.now_str()
+
+    # Escalate to Level 3 (Management) and bump priority by +15
+    new_priority = (complaint.get("priority_score", 40)) + 15
+    db_conn.complaints.update_one(
+        {"_id": c_oid},
+        {"$set": {
+            "escalation_level": 3,
+            "is_chronic_discontent": True,
+            "priority_score": new_priority,
+            "updated_at": now_str
+        }}
+    )
+
+    reason = f"Chronic dissatisfaction: Ticket reopened {reopen_count} times by student."
+
+    # Record escalation
+    admins = list(db_conn.users.find({"role": "admin"}))
+    for admin in admins:
+        db_conn.escalations.insert_one({
+            "complaint_id": c_oid,
+            "from_level": complaint.get("escalation_level", 0),
+            "to_level": 3,
+            "reason": reason,
+            "notified_user_id": admin["_id"],
+            "is_automated": True,
+            "escalated_at": now_str
+        })
+
+        # Urgent notification
+        track_url = f"/complaint/{complaint.get('ticket_code')}"
+        db_conn.notifications.insert_one({
+            "user_id": admin["_id"],
+            "message": f"🚨 CHRONIC REOPEN: Ticket {complaint.get('ticket_code')} reopened {reopen_count}x. Dean review required!",
+            "link": track_url,
+            "is_read": False,
+            "created_at": now_str
+        })
+
+        # Email Dean / Administrators
+        if admin.get("email"):
+            mail.send_async(
+                admin["email"],
+                f"[URGENT - Multi-Reopen] Ticket {complaint.get('ticket_code')} Reopened {reopen_count} Times",
+                f"<p>Attention <strong>Institutional Leadership</strong>,</p>"
+                f"<p>Ticket <strong>{complaint.get('ticket_code')}</strong> ({complaint.get('subject')}) "
+                f"has been reopened <strong>{reopen_count} times</strong> by the student, indicating chronic dissatisfaction.</p>"
+                f"<p>The automation engine has escalated this ticket to <strong>Management / Dean Level</strong> with priority score {new_priority}.</p>"
+            )
+
+    # Status audit log
+    db_conn.complaint_status_history.insert_one({
+        "complaint_id": c_oid,
+        "old_status": complaint.get("status"),
+        "new_status": "Reopened",
+        "remark": f"AUTOMATION: Chronic reopen detected ({reopen_count}x). Escalated directly to Principal / Dean level.",
+        "changed_by": None,
+        "is_automated": True,
+        "created_at": now_str
+    })
+
+    return True
+
 

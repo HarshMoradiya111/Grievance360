@@ -667,7 +667,7 @@ def add_comment(complaint_id):
                             ticket_code=complaint["ticket_code"]))
 
 
-@app.route("/complaint/<int:complaint_id>/feedback", methods=["POST"])
+@app.route("/complaint/<complaint_id>/feedback", methods=["POST"])
 @login_required
 @role_required("student")
 def submit_feedback(complaint_id):
@@ -685,31 +685,43 @@ def submit_feedback(complaint_id):
         rating = 0
     remark = request.form.get("remark", "").strip()
 
+    db_conn = db.get_db()
+    c_oid = ObjectId(complaint["id"]) if isinstance(complaint["id"], str) and len(complaint["id"]) == 24 else complaint["id"]
+    u_oid = ObjectId(current_user.id) if isinstance(current_user.id, str) and len(current_user.id) == 24 else current_user.id
+
     if rating < 1 or rating > 5:
         flash("Please pick a rating between 1 and 5 stars.", "danger")
-    elif db.query_one("SELECT id FROM feedback WHERE complaint_id = %s",
-                      (complaint_id,)):
+    elif db_conn.feedback.find_one({"complaint_id": c_oid}):
         flash("You have already rated this complaint.", "info")
     else:
-        db.execute(
-            "INSERT INTO feedback "
-            "(complaint_id, user_id, rating, remark, created_at) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (complaint_id, current_user.id, rating, remark, helpers.now_str()),
-        )
+        now = helpers.now_str()
+        db_conn.feedback.insert_one({
+            "complaint_id": c_oid,
+            "user_id": u_oid,
+            "rating": rating,
+            "remark": remark,
+            "created_at": now
+        })
         # Rating a complaint closes it for good.
-        db.execute("UPDATE complaints SET status = 'Closed', updated_at = %s "
-                   "WHERE id = %s", (helpers.now_str(), complaint_id))
-        log_status(complaint_id, complaint["status"], "Closed",
-                   "Closed after student feedback (%d/5)." % rating,
-                   current_user.id)
+        db_conn.complaints.update_one(
+            {"_id": c_oid},
+            {"$set": {"status": "Closed", "rating": rating, "updated_at": now}}
+        )
+        db_conn.complaint_status_history.insert_one({
+            "complaint_id": c_oid,
+            "old_status": complaint["status"],
+            "new_status": "Closed",
+            "remark": f"Closed after student feedback ({rating}/5 stars).",
+            "changed_by": u_oid,
+            "created_at": now
+        })
         flash("Thank you for your feedback.", "success")
 
     return redirect(url_for("track_complaint",
                             ticket_code=complaint["ticket_code"]))
 
 
-@app.route("/complaint/<int:complaint_id>/reopen", methods=["POST"])
+@app.route("/complaint/<complaint_id>/reopen", methods=["POST"])
 @login_required
 @role_required("student")
 def reopen_complaint(complaint_id):
@@ -722,32 +734,72 @@ def reopen_complaint(complaint_id):
                                 ticket_code=complaint["ticket_code"]))
 
     reason = request.form.get("reason", "").strip() or "Student was not satisfied."
-    reopen_count = (complaint["reopen_count"] or 0) + 1
+    reopen_count = (complaint.get("reopen_count") or 0) + 1
     now = helpers.now_str()
+    new_deadline = helpers.add_days(now, complaint.get("sla_days", 5))
 
-    # Reopening restarts the SLA clock and pushes the priority score up by 5.
-    new_deadline = helpers.add_days(now, complaint["sla_days"])
-    db.execute(
-        "UPDATE complaints SET status = 'Reopened', reopen_count = %s, "
-        "resolved_at = NULL, deadline = %s, updated_at = %s WHERE id = %s",
-        (reopen_count, new_deadline, now, complaint_id),
+    db_conn = db.get_db()
+    c_oid = ObjectId(complaint["id"]) if isinstance(complaint["id"], str) and len(complaint["id"]) == 24 else complaint["id"]
+    u_oid = ObjectId(current_user.id) if isinstance(current_user.id, str) and len(current_user.id) == 24 else current_user.id
+
+    new_priority = helpers.priority_score(
+        complaint.get("priority_weight", 1),
+        complaint["created_at"],
+        reopen_count,
+        complaint.get("supporter_count", 0)
     )
-    complaint["reopen_count"] = reopen_count
-    refresh_priority(complaint)
 
-    log_status(complaint_id, complaint["status"], "Reopened", reason,
-               current_user.id)
+    db_conn.complaints.update_one(
+        {"_id": c_oid},
+        {"$set": {
+            "status": "Reopened",
+            "reopen_count": reopen_count,
+            "resolved_at": None,
+            "deadline": new_deadline,
+            "updated_at": now,
+            "priority_score": new_priority
+        }}
+    )
+
+    db_conn.complaint_status_history.insert_one({
+        "complaint_id": c_oid,
+        "old_status": complaint["status"],
+        "new_status": "Reopened",
+        "remark": reason,
+        "changed_by": u_oid,
+        "created_at": now
+    })
 
     link = url_for("track_complaint", ticket_code=complaint["ticket_code"])
-    notify(complaint["assigned_to"],
-           "Complaint %s was reopened" % complaint["ticket_code"],
-           link, complaint_id)
-    for admin in db.query_all("SELECT id FROM users WHERE role = 'admin'"):
-        notify(admin["id"],
-               "Complaint %s was reopened" % complaint["ticket_code"],
-               link, complaint_id)
 
-    flash("Complaint reopened. The department has been notified.", "success")
+    # Notify assigned staff
+    if complaint.get("assigned_to"):
+        db_conn.notifications.insert_one({
+            "user_id": complaint["assigned_to"],
+            "message": f"Complaint {complaint['ticket_code']} was reopened",
+            "link": link,
+            "is_read": False,
+            "created_at": now
+        })
+
+    # Notify admins
+    for admin in db_conn.users.find({"role": "admin"}):
+        db_conn.notifications.insert_one({
+            "user_id": admin["_id"],
+            "message": f"Complaint {complaint['ticket_code']} was reopened",
+            "link": link,
+            "is_read": False,
+            "created_at": now
+        })
+
+    # Phase 3: Multi-Reopen Automation hook
+    if reopen_count >= 2:
+        automation.handle_multi_reopen_escalation(db_conn, c_oid, current_user.id)
+        flash("Complaint reopened. Because this is the 2nd time, it has been automatically escalated to the Principal / Dean level.", "warning")
+    else:
+        flash("Complaint reopened. The department has been notified.", "success")
+
+    return redirect(link)
     return redirect(link)
 
 
@@ -787,7 +839,7 @@ def staff_dashboard():
                            complaints=complaints, counts=counts)
 
 
-@app.route("/complaint/<int:complaint_id>/status", methods=["GET", "POST"])
+@app.route("/complaint/<complaint_id>/status", methods=["GET", "POST"])
 @login_required
 @role_required("staff", "admin")
 def update_status(complaint_id):
@@ -809,31 +861,54 @@ def update_status(complaint_id):
         now = helpers.now_str()
         resolved_at = now if new_status in ("Resolved", "Closed") else None
 
-        db.execute(
-            "UPDATE complaints SET status = %s, updated_at = %s, "
-            "resolved_at = %s WHERE id = %s",
-            (new_status, now, resolved_at, complaint_id),
-        )
-        log_status(complaint_id, complaint["status"], new_status, remark,
-                   current_user.id)
+        db_conn = db.get_db()
+        c_oid = ObjectId(complaint["id"]) if isinstance(complaint["id"], str) and len(complaint["id"]) == 24 else complaint["id"]
+        u_oid = ObjectId(current_user.id) if isinstance(current_user.id, str) and len(current_user.id) == 24 else current_user.id
 
-        notify(complaint["user_id"],
-               "%s is now %s" % (complaint["ticket_code"], new_status),
-               url_for("track_complaint", ticket_code=complaint["ticket_code"]),
-               complaint_id)
+        db_conn.complaints.update_one(
+            {"_id": c_oid},
+            {"$set": {
+                "status": new_status,
+                "updated_at": now,
+                "resolved_at": resolved_at
+            }}
+        )
+
+        db_conn.complaint_status_history.insert_one({
+            "complaint_id": c_oid,
+            "old_status": complaint["status"],
+            "new_status": new_status,
+            "remark": remark,
+            "changed_by": u_oid,
+            "created_at": now
+        })
+
+        # In-app notification
+        link = url_for("track_complaint", ticket_code=complaint["ticket_code"])
+        student_oid = ObjectId(complaint["user_id"]) if isinstance(complaint["user_id"], str) and len(complaint["user_id"]) == 24 else complaint["user_id"]
+        db_conn.notifications.insert_one({
+            "user_id": student_oid,
+            "message": "%s is now %s" % (complaint["ticket_code"], new_status),
+            "link": link,
+            "is_read": False,
+            "created_at": now
+        })
 
         # Email the student about the status change
-        student_row = db.query_one("SELECT email, name FROM users WHERE id = %s",
-                                   (complaint["user_id"],))
-        if student_row:
+        student_row = db_conn.users.find_one({"_id": student_oid})
+        if student_row and student_row.get("email"):
             mail.notify_status_changed(
                 student_email=student_row["email"],
-                student_name=student_row["name"],
+                student_name=student_row.get("name", "Student"),
                 ticket_code=complaint["ticket_code"],
                 old_status=complaint["status"],
                 new_status=new_status,
                 remark=remark,
             )
+
+        # Phase 3: Post-Resolution CSAT Feedback Trigger
+        if new_status == "Resolved":
+            automation.trigger_post_resolution_feedback(db_conn, c_oid)
 
         flash("Status updated to %s." % new_status, "success")
         return redirect(url_for("track_complaint",

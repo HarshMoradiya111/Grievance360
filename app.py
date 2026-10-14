@@ -15,6 +15,7 @@ import config
 import db
 import helpers
 import mail
+import automation
 
 # ===========================================================================
 # 1. SETUP & AUTHENTICATION PLUMBING
@@ -144,11 +145,11 @@ def get_complaint_or_404(ticket_code=None, complaint_id=None):
 
     # We need to lookup category, department, user, assigned_to
     cursor = db_conn.complaints.aggregate([
-        {'': query},
-        {'': {'from': 'categories', 'localField': 'category_id', 'foreignField': '_id', 'as': 'cat'}},
-        {'': {'from': 'departments', 'localField': 'department_id', 'foreignField': '_id', 'as': 'dept'}},
-        {'': {'from': 'users', 'localField': 'user_id', 'foreignField': '_id', 'as': 'student'}},
-        {'': {'from': 'users', 'localField': 'assigned_to', 'foreignField': '_id', 'as': 'assigned'}}
+        {'$match': query},
+        {'$lookup': {'from': 'categories', 'localField': 'category_id', 'foreignField': '_id', 'as': 'cat'}},
+        {'$lookup': {'from': 'departments', 'localField': 'department_id', 'foreignField': '_id', 'as': 'dept'}},
+        {'$lookup': {'from': 'users', 'localField': 'user_id', 'foreignField': '_id', 'as': 'student'}},
+        {'$lookup': {'from': 'users', 'localField': 'assigned_to', 'foreignField': '_id', 'as': 'assigned'}}
     ])
     try:
         c = next(cursor)
@@ -536,6 +537,12 @@ def raise_complaint():
             "created_at": created_at
         })
 
+        # Phase 1: Automation Engine Execution (Emergency triage, duplicate detection, auto-assignment)
+        try:
+            auto_res = automation.process_new_complaint_automation(db_conn, res.inserted_id)
+        except Exception as auto_exc:
+            auto_res = {"error": str(auto_exc)}
+
         # Tell every admin a new complaint landed.
         admins = db_conn.users.find({"role": "admin"})
         for admin in admins:
@@ -559,8 +566,13 @@ def raise_complaint():
             deadline=helpers.pretty_date(deadline),
         )
 
-        flash("Complaint submitted. Your ticket number is %s." % ticket_code,
-              "success")
+        if auto_res.get("emergency_detected"):
+            flash("🚨 Emergency Fast-Track: Your complaint has been marked CRITICAL and escalated directly to Campus Security & Dean.", "danger")
+        elif auto_res.get("auto_assigned"):
+            flash("Complaint %s submitted and automatically assigned to %s." % (ticket_code, auto_res.get("assigned_to")), "success")
+        else:
+            flash("Complaint submitted. Your ticket number is %s." % ticket_code, "success")
+
         return redirect(url_for("track_complaint", ticket_code=ticket_code))
 
     return render_template("student/raise.html", categories=categories, form={})

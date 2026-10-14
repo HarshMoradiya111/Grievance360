@@ -72,3 +72,15 @@ MAIL_USER     = "grievance.charusat@gmail.com"   # your sender address
 MAIL_PASSWORD = "sggvrxpfdjvdplmf"                           # app password goes here
 MAIL_FROM     = "Grievance360 — CHARUSAT <grievance.charusat@gmail.com>"
 PORTAL_URL = "https://grievance360portal.vercel.app"
+
+# -------------------------------------------------------------- automation ---
+AUTO_ASSIGN_ENABLED            = True   # Zero-touch smart dispatch to staff
+EMERGENCY_TRIAGE_ENABLED       = True   # Fast-track anti-ragging and safety issues
+AUTO_DUPLICATE_LINK_ENABLED    = True   # Auto-tag and cluster similar complaints
+EMERGENCY_SLA_DAYS             = 1      # 24-hour turnaround for emergency complaints
+DUPLICATE_SIMILARITY_THRESHOLD = 0.50   # Jaccard threshold for duplicate grouping
+AUTO_ESCALATION_ENABLED        = True   # Background daemon for SLA escalations
+AUTO_CLOSE_DAYS                = 5      # Days after resolution before auto-close
+SLA_WARNING_PERCENT            = 0.75   # Send pre-breach warning at 75% elapsed
+STALLED_TICKET_HOURS           = 48     # Hours of inactivity before staff nudge
+

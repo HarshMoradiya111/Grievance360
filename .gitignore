@@ -29,6 +29,8 @@ env/
 
 # Local test and verification scripts
 test_*.py
+test_phase*.py
+test_phase*
 
 # Documentation, report generators and binaries
 docs/

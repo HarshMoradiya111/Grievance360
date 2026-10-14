@@ -3,9 +3,10 @@ from datetime import datetime
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash
 
-MONGO_URI = "mongodb+srv://grievancecharusat_db_user:aAPfZE5SascLlP6x@cluster0.pmbehtz.mongodb.net/?appName=Cluster0"
-client = MongoClient(MONGO_URI)
-db = client["grievance360"]
+import config
+
+client = MongoClient(config.MONGO_URI)
+db = client[config.MONGO_DB]
 
 # Clear existing
 db.users.drop()

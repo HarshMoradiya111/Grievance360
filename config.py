@@ -11,17 +11,34 @@ import shutil
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+# Auto-load .env file if present
+def _load_env_file():
+    env_file = os.path.join(BASE_DIR, ".env")
+    if os.path.isfile(env_file):
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip("'\"")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+
+_load_env_file()
+
 # ---------------------------------------------------------------- database ---
 # "mongodb"= uses the MongoDB settings below
-DB_ENGINE = "mongodb"
+DB_ENGINE = os.environ.get("DB_ENGINE", "mongodb")
 
 # On Vercel the deployed filesystem is read-only; copy the seeded database
 # to /tmp (writable) on cold start so the app can write to it.
 UPLOAD_FOLDER_DEFAULT = None  # use the project-relative path below
 
 # Used when DB_ENGINE = "mongodb"
-MONGO_URI = "mongodb+srv://grievancecharusat_db_user:aAPfZE5SascLlP6x@cluster0.pmbehtz.mongodb.net/?appName=Cluster0"
-MONGO_DB = "grievance360"
+MONGO_URI = os.environ.get("MONGO_URI", "mongodb+srv://<username>:<password>@cluster0.pmbehtz.mongodb.net/?appName=Cluster0")
+MONGO_DB = os.environ.get("MONGO_DB", "grievance360")
 
 # ------------------------------------------------------------------- flask ---
 SECRET_KEY = os.environ.get("SECRET_KEY", "grievance360-dev-secret-key-change-me-in-production")
@@ -65,13 +82,13 @@ PAGE_SIZE = 20
 # For Gmail: enable 2FA, then create an App Password at
 #   https://myaccount.google.com/apppasswords
 # Use that 16-char app password here — NOT your normal Gmail password.
-MAIL_ENABLED  = True                        # flip to True once configured
-MAIL_SMTP     = "smtp.gmail.com"
-MAIL_PORT     = 587                          # TLS
-MAIL_USER     = "grievance.charusat@gmail.com"   # your sender address
-MAIL_PASSWORD = "sggvrxpfdjvdplmf"                           # app password goes here
-MAIL_FROM     = "Grievance360 — CHARUSAT <grievance.charusat@gmail.com>"
-PORTAL_URL = "https://grievance360portal.vercel.app"
+MAIL_ENABLED  = os.environ.get("MAIL_ENABLED", "True").lower() in ("true", "1", "yes")
+MAIL_SMTP     = os.environ.get("MAIL_SMTP", "smtp.gmail.com")
+MAIL_PORT     = int(os.environ.get("MAIL_PORT", 587))
+MAIL_USER     = os.environ.get("MAIL_USER", "grievance.charusat@gmail.com")
+MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+MAIL_FROM     = os.environ.get("MAIL_FROM", "Grievance360 — CHARUSAT <grievance.charusat@gmail.com>")
+PORTAL_URL    = os.environ.get("PORTAL_URL", "https://grievance360portal.vercel.app")
 
 # -------------------------------------------------------------- automation ---
 AUTO_ASSIGN_ENABLED            = True   # Zero-touch smart dispatch to staff

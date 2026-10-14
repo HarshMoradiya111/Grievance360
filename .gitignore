@@ -24,8 +24,15 @@ env/
 
 # Environment variables
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+
+# Local test and verification scripts
+test_*.py
+
+# Generated documentation binaries
+docs/*.docx
+docs/*.pdf
 
 # Uploads (user-uploaded files — exclude from repo)
 static/uploads/*

@@ -325,3 +325,242 @@ def process_new_complaint_automation(db_conn, complaint_id, app_context_url_buil
     db_conn.complaints.update_one({"_id": c_oid}, {"$set": updates})
 
     return actions
+
+
+# ===========================================================================
+# PHASE 2: CONTINUOUS LIFECYCLE & SLA MONITORING (ESCALATION DAEMON)
+# ===========================================================================
+
+def run_automated_escalations(db_conn):
+    """
+    Background worker that scans all open complaints, calculates elapsed SLA ratio,
+    and automatically advances escalation levels (Reminder -> Department -> Management).
+    Replaces the manual 'Run Sweep' admin button.
+    """
+    if not getattr(config, "AUTO_ESCALATION_ENABLED", True):
+        return {"skipped": True, "reason": "AUTO_ESCALATION_ENABLED is False"}
+
+    closed_statuses = list(config.CLOSED_STATUSES)
+    open_complaints = list(db_conn.complaints.find({
+        "status": {"$nin": closed_statuses}
+    }))
+
+    admins = list(db_conn.users.find({"role": "admin"}))
+    raised = 0
+    now = helpers.now_str()
+
+    for c in open_complaints:
+        lvl, label, _ = helpers.escalation_level(c)
+        if lvl == 0:
+            continue
+
+        # Look up current highest recorded escalation level
+        existing = db_conn.escalations.find_one(
+            {"complaint_id": c["_id"]},
+            sort=[("to_level", -1)]
+        )
+        current_top = existing.get("to_level", 0) if existing else 0
+        if lvl <= current_top:
+            continue  # Escalation only moves up
+
+        ratio = helpers.elapsed_ratio(c)
+        reason = f"Elapsed ratio {ratio:.2f} — {label} threshold reached."
+
+        # Notify assigned staff for Level 1, all admins + staff for Level 2+
+        notify_users = []
+        if lvl == 1 and c.get("assigned_to"):
+            staff_user = db_conn.users.find_one({"_id": c["assigned_to"]})
+            if staff_user:
+                notify_users.append(staff_user)
+        elif lvl >= 2:
+            notify_users.extend(admins)
+            if c.get("assigned_to"):
+                staff_user = db_conn.users.find_one({"_id": c["assigned_to"]})
+                if staff_user and staff_user not in notify_users:
+                    notify_users.append(staff_user)
+
+        # Record escalation
+        for u in notify_users:
+            db_conn.escalations.insert_one({
+                "complaint_id": c["_id"],
+                "from_level": current_top,
+                "to_level": lvl,
+                "reason": reason,
+                "notified_user_id": u["_id"],
+                "is_automated": True,
+                "escalated_at": now
+            })
+
+            # In-app notification
+            track_url = f"/complaint/{c.get('ticket_code')}"
+            db_conn.notifications.insert_one({
+                "user_id": u["_id"],
+                "message": f"⚡ Ticket {c.get('ticket_code')} auto-escalated to {label} level.",
+                "link": track_url,
+                "is_read": False,
+                "created_at": now
+            })
+
+            # Email notification
+            if u.get("email"):
+                mail.notify_escalation(
+                    admin_email=u["email"],
+                    ticket_code=c.get("ticket_code", "TICKET"),
+                    subject=c.get("subject", "No subject"),
+                    level_label=label,
+                    student_name="Student",
+                    portal_base=config.PORTAL_URL
+                )
+
+        # Audit trail history
+        db_conn.complaint_status_history.insert_one({
+            "complaint_id": c["_id"],
+            "old_status": c.get("status"),
+            "new_status": c.get("status"),
+            "remark": f"AUTOMATION DAEMON: Ticket auto-escalated to {label} (Level {lvl}). {reason}",
+            "changed_by": None,
+            "is_automated": True,
+            "created_at": now
+        })
+
+        db_conn.complaints.update_one(
+            {"_id": c["_id"]},
+            {"$set": {"escalation_level": lvl, "updated_at": now}}
+        )
+        raised += 1
+
+    return {"checked": len(open_complaints), "escalated": raised}
+
+
+def check_sla_pre_breach_warnings(db_conn):
+    """
+    Early Warning System (Yellow Alert):
+    Detects complaints that have consumed >= 75% of their allowed SLA time
+    and warns assigned staff before the breach occurs.
+    """
+    threshold = getattr(config, "SLA_WARNING_PERCENT", 0.75)
+    closed_statuses = list(config.CLOSED_STATUSES)
+
+    open_complaints = list(db_conn.complaints.find({
+        "status": {"$nin": closed_statuses},
+        "pre_breach_warned": {"$ne": True}
+    }))
+
+    now = helpers.now_str()
+    warned = 0
+
+    for c in open_complaints:
+        ratio = helpers.elapsed_ratio(c)
+        if ratio >= threshold and ratio < 1.0:
+            warned += 1
+            db_conn.complaints.update_one(
+                {"_id": c["_id"]},
+                {"$set": {"pre_breach_warned": True, "updated_at": now}}
+            )
+
+            # Audit history entry
+            pct = int(ratio * 100)
+            db_conn.complaint_status_history.insert_one({
+                "complaint_id": c["_id"],
+                "old_status": c.get("status"),
+                "new_status": c.get("status"),
+                "remark": f"AUTOMATION: SLA Pre-Breach Early Warning triggered ({pct}% elapsed time).",
+                "changed_by": None,
+                "is_automated": True,
+                "created_at": now
+            })
+
+            # Notify assigned staff
+            if c.get("assigned_to"):
+                track_url = f"/complaint/{c.get('ticket_code')}"
+                db_conn.notifications.insert_one({
+                    "user_id": c["assigned_to"],
+                    "message": f"⚠️ SLA Early Warning: {c.get('ticket_code')} has used {pct}% of SLA time!",
+                    "link": track_url,
+                    "is_read": False,
+                    "created_at": now
+                })
+                staff_user = db_conn.users.find_one({"_id": c["assigned_to"]})
+                if staff_user and staff_user.get("email"):
+                    mail.send_async(
+                        staff_user["email"],
+                        f"[SLA Early Warning] {c.get('ticket_code')} is at {pct}% SLA limit",
+                        f"<p>Attention <strong>{staff_user.get('name')}</strong>,</p>"
+                        f"<p>Ticket <strong>{c.get('ticket_code')}</strong> ({c.get('subject')}) "
+                        f"has consumed <strong>{pct}%</strong> of its allowed SLA window.</p>"
+                        f"<p>Please review and resolve this complaint promptly to prevent an institutional SLA breach.</p>"
+                    )
+
+    return {"checked": len(open_complaints), "pre_breach_warned": warned}
+
+
+def check_stalled_complaints(db_conn):
+    """
+    Inactivity Nudge:
+    Finds complaints in 'Assigned' or 'In Progress' with no status change
+    or comments for over STALLED_TICKET_HOURS (default 48h).
+    """
+    stall_hours = getattr(config, "STALLED_TICKET_HOURS", 48)
+    now = helpers.now_str()
+    now_dt = datetime.now()
+
+    stalled_candidates = list(db_conn.complaints.find({
+        "status": {"$in": ["Assigned", "In Progress"]}
+    }))
+
+    nudged = 0
+    for c in stalled_candidates:
+        # Check last update or last nudge
+        last_dt = helpers.to_dt(c.get("last_stalled_nudge_at") or c.get("updated_at") or c.get("created_at"))
+        if not last_dt:
+            continue
+
+        hours_elapsed = (now_dt - last_dt).total_seconds() / 3600.0
+        if hours_elapsed >= stall_hours:
+            nudged += 1
+            db_conn.complaints.update_one(
+                {"_id": c["_id"]},
+                {"$set": {"last_stalled_nudge_at": now, "updated_at": now}}
+            )
+
+            # Audit history entry
+            db_conn.complaint_status_history.insert_one({
+                "complaint_id": c["_id"],
+                "old_status": c.get("status"),
+                "new_status": c.get("status"),
+                "remark": f"AUTOMATION: Stalled ticket reminder dispatched ({int(hours_elapsed)} hours without activity).",
+                "changed_by": None,
+                "is_automated": True,
+                "created_at": now
+            })
+
+            # Notify assigned staff
+            if c.get("assigned_to"):
+                track_url = f"/complaint/{c.get('ticket_code')}"
+                db_conn.notifications.insert_one({
+                    "user_id": c["assigned_to"],
+                    "message": f"⏰ Inactivity Nudge: Ticket {c.get('ticket_code')} has been stalled for {int(hours_elapsed)}h. Please post an update.",
+                    "link": track_url,
+                    "is_read": False,
+                    "created_at": now
+                })
+
+    return {"checked": len(stalled_candidates), "nudged": nudged}
+
+
+def run_lifecycle_sweep(db_conn):
+    """
+    Consolidated runner that executes all Phase 2 lifecycle automation routines.
+    Can be scheduled in background thread or triggered via secure API endpoint.
+    """
+    esc_result = run_automated_escalations(db_conn)
+    sla_result = check_sla_pre_breach_warnings(db_conn)
+    stall_result = check_stalled_complaints(db_conn)
+
+    return {
+        "timestamp": helpers.now_str(),
+        "escalations": esc_result,
+        "sla_warnings": sla_result,
+        "stalled_nudges": stall_result
+    }
+

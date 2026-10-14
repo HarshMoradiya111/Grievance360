@@ -1555,15 +1555,22 @@ def admin_category_edit(cat_id):
 @login_required
 @role_required("admin")
 def admin_escalations():
-    open_complaints = db.query_all(
-        "SELECT c.*, cat.name AS category_name, cat.priority_weight, "
-        "       d.name AS department_name, u.name AS student_name "
-        "FROM complaints c "
-        "JOIN categories cat      ON cat.id = c.category_id "
-        "LEFT JOIN departments d  ON d.id   = c.department_id "
-        "JOIN users u             ON u.id   = c.user_id "
-        "WHERE c.status NOT IN ('Resolved','Closed','Rejected')"
-    )
+    db_conn = db.get_db()
+    cursor = db_conn.complaints.aggregate([
+        {"$match": {"status": {"$nin": list(config.CLOSED_STATUSES)}}},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "cat"}},
+        {"$lookup": {"from": "departments", "localField": "department_id", "foreignField": "_id", "as": "dept"}},
+        {"$lookup": {"from": "users", "localField": "user_id", "foreignField": "_id", "as": "student"}},
+        {"$lookup": {"from": "users", "localField": "assigned_to", "foreignField": "_id", "as": "assigned"}}
+    ])
+    open_complaints = []
+    for c in cursor:
+        c["id"] = str(c["_id"])
+        c["category_name"] = c.get("cat", [{}])[0].get("name") if c.get("cat") else ""
+        c["priority_weight"] = c.get("cat", [{}])[0].get("priority_weight", 1) if c.get("cat") else 1
+        c["department_name"] = c.get("dept", [{}])[0].get("name") if c.get("dept") else ""
+        c["student_name"] = c.get("student", [{}])[0].get("name") if c.get("student") else ""
+        open_complaints.append(c)
 
     buckets = {0: [], 1: [], 2: [], 3: []}
     for c in open_complaints:
@@ -1574,7 +1581,7 @@ def admin_escalations():
 
     # Sort each bucket oldest-deadline-first
     for lvl in buckets:
-        buckets[lvl].sort(key=lambda x: helpers.to_dt(x["deadline"]) or datetime.now())
+        buckets[lvl].sort(key=lambda x: helpers.to_dt(x.get("deadline")) or datetime.now())
 
     levels = {k: len(v) for k, v in buckets.items()}
     sections = [
@@ -1591,70 +1598,36 @@ def admin_escalations():
 @login_required
 @role_required("admin")
 def run_escalations():
-    open_complaints = db.query_all(
-        "SELECT c.*, cat.sla_days, cat.priority_weight "
-        "FROM complaints c "
-        "JOIN categories cat ON cat.id = c.category_id "
-        "WHERE c.status NOT IN ('Resolved','Closed','Rejected')"
-    )
-    admins = db.query_all("SELECT id FROM users WHERE role = 'admin'")
-    raised = 0
-    for c in open_complaints:
-        lvl, label, _ = helpers.escalation_level(c)
-        if lvl == 0:
-            continue
-        existing = db.query_one(
-            "SELECT to_level FROM escalations WHERE complaint_id = %s "
-            "ORDER BY to_level DESC LIMIT 1", (c["id"],))
-        current_top = existing["to_level"] if existing else 0
-        if lvl <= current_top:
-            continue  # escalation only moves up
-        ratio = helpers.elapsed_ratio(c)
-        reason = "Elapsed ratio %.2f — %s threshold crossed." % (ratio, label)
-        # Notify assigned staff for level 1, all admins for 2+
-        notify_ids = []
-        if lvl == 1 and c.get("assigned_to"):
-            notify_ids = [c["assigned_to"]]
-        elif lvl >= 2:
-            notify_ids = [a["id"] for a in admins]
-        student_row = db.query_one(
-            "SELECT name FROM users WHERE id = %s", (c["user_id"],))
-        student_name = student_row["name"] if student_row else "Unknown"
-
-        for uid in notify_ids:
-            db.execute(
-                "INSERT INTO escalations "
-                "(complaint_id, from_level, to_level, reason, "
-                "notified_user_id, escalated_at) VALUES (%s,%s,%s,%s,%s,%s)",
-                (c["id"], current_top, lvl, reason, uid, helpers.now_str()))
-            link = url_for("track_complaint", ticket_code=c["ticket_code"])
-            notify(uid, "Complaint %s escalated to %s" % (c["ticket_code"], label),
-                   link, c["id"])
-            # Email the notified admin / staff member
-            notif_user = db.query_one("SELECT email FROM users WHERE id = %s",
-                                      (uid,))
-            if notif_user:
-                mail.notify_escalation(
-                    admin_email=notif_user["email"],
-                    ticket_code=c["ticket_code"],
-                    subject=c["subject"],
-                    level_label=label,
-                    student_name=student_name,
-                )
-        raised += 1
-    flash("Sweep complete. %d complaint(s) escalated." % raised, "success")
+    db_conn = db.get_db()
+    sweep_res = automation.run_lifecycle_sweep(db_conn)
+    raised = sweep_res.get("escalations", {}).get("escalated", 0)
+    warned = sweep_res.get("sla_warnings", {}).get("pre_breach_warned", 0)
+    nudged = sweep_res.get("stalled_nudges", {}).get("nudged", 0)
+    flash(f"Automation sweep complete. {raised} ticket(s) escalated, {warned} SLA pre-breach warning(s), {nudged} stalled ticket nudge(s).", "success")
     return redirect(url_for("admin_escalations"))
+
+
+@app.route("/api/cron/lifecycle-sweep", methods=["GET", "POST"])
+def cron_lifecycle_sweep():
+    """Secure endpoint for external cron triggers and automated scheduling."""
+    secret = request.args.get("secret") or request.headers.get("X-Cron-Secret")
+    expected_secret = os.environ.get("CRON_SECRET", "grievance360-cron-secret-key")
+    if secret != expected_secret and not (current_user.is_authenticated and getattr(current_user, "role", "") == "admin"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    db_conn = db.get_db()
+    res = automation.run_lifecycle_sweep(db_conn)
+    return jsonify({"ok": True, "result": res})
 
 
 @app.route("/api/escalation/check")
 @login_required
 @role_required("admin")
 def api_escalation_check():
-    open_complaints = db.query_all(
-        "SELECT c.*, cat.priority_weight FROM complaints c "
-        "JOIN categories cat ON cat.id = c.category_id "
-        "WHERE c.status NOT IN ('Resolved','Closed','Rejected')"
-    )
+    db_conn = db.get_db()
+    open_complaints = list(db_conn.complaints.find({
+        "status": {"$nin": list(config.CLOSED_STATUSES)}
+    }))
     counts = {0: 0, 1: 0, 2: 0, 3: 0}
     for c in open_complaints:
         lvl, _, _ = helpers.escalation_level(c)
@@ -2388,6 +2361,6 @@ def profile():
 
 if __name__ == "__main__":
     os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
-    if config.DB_ENGINE == "sqlite" and not os.path.exists(config.SQLITE_PATH):
-        print("Database not found. Run:  python init_db.py")
+    import scheduler
+    scheduler.start_automation_scheduler(app, interval_seconds=getattr(config, "AUTO_ESCALATION_INTERVAL_MIN", 30) * 60)
     app.run(debug=True, host="127.0.0.1", port=5000)

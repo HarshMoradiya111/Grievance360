@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Automation Center &middot; Grievance360{% endblock %}
+{% block content %}
+
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-cpu text-primary me-2"></i> Automation Command Center</h4>
+    <p class="ge-page-sub text-muted mb-0">
+      Autonomous background rules, SLA monitors, triage engines, and executive reporting.
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-success-subtle text-success border border-success px-3 py-2">
+      <i class="bi bi-circle-fill me-1 small"></i> Background Scheduler Active
+    </span>
+  </div>
+</div>
+
+<!-- Stat Tiles -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="ge-stat card border-0 shadow-sm p-3 text-center">
+      <div class="ge-stat-value fs-2 fw-bold text-primary">{{ stats.total_automated_actions }}</div>
+      <div class="ge-stat-label text-muted small fw-semibold">Automated Actions</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat card border-0 shadow-sm p-3 text-center">
+      <div class="ge-stat-value fs-2 fw-bold text-warning">{{ stats.total_escalations }}</div>
+      <div class="ge-stat-label text-muted small fw-semibold">Auto-Escalations</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat card border-0 shadow-sm p-3 text-center">
+      <div class="ge-stat-value fs-2 fw-bold text-danger">{{ stats.total_notices }}</div>
+      <div class="ge-stat-label text-muted small fw-semibold">Outage Advisories</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="ge-stat card border-0 shadow-sm p-3 text-center">
+      <div class="ge-stat-value fs-2 fw-bold text-success">
+        {{ (1 if config_settings.auto_assign else 0) + (1 if config_settings.emergency_triage else 0) + (1 if config_settings.duplicate_link else 0) + (1 if config_settings.auto_escalation else 0) }} / 4
+      </div>
+      <div class="ge-stat-label text-muted small fw-semibold">Active Rules</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Left Column: Settings & Configuration -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white py-3 border-bottom d-flex align-items-center justify-content-between">
+        <h5 class="card-title mb-0 fs-6 fw-bold text-dark">
+          <i class="bi bi-sliders me-2 text-primary"></i> Automation Rules & Configuration
+        </h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('admin_automation_settings') }}">
+          
+          <h6 class="text-uppercase text-muted fw-bold small mb-3">Triage & Dispatch</h6>
+          
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="auto_assign" name="auto_assign" value="1"
+                   {% if config_settings.auto_assign %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="auto_assign">
+              Zero-Touch Staff Auto-Assignment
+            </label>
+            <div class="form-text text-muted small">
+              Automatically assigns incoming grievances to the least-burdened staff member in the department.
+            </div>
+          </div>
+
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="emergency_triage" name="emergency_triage" value="1"
+                   {% if config_settings.emergency_triage %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="emergency_triage">
+              AI/NLP Emergency & Anti-Ragging Fast-Track
+            </label>
+            <div class="form-text text-muted small">
+              Detects safety, harassment, and ragging keywords; sets priority to Critical (100) and alerts Campus Security/Dean.
+            </div>
+          </div>
+
+          <div class="form-check form-switch mb-4">
+            <input class="form-check-input" type="checkbox" role="switch" id="duplicate_link" name="duplicate_link" value="1"
+                   {% if config_settings.duplicate_link %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="duplicate_link">
+              Automated Duplicate Tagging & Supporter Linkage
+            </label>
+            <div class="form-text text-muted small">
+              Auto-links complaints with similarity &ge; 50% and aggregates supporter votes.
+            </div>
+          </div>
+
+          <h6 class="text-uppercase text-muted fw-bold small mb-3">Lifecycle & Timing Rules</h6>
+
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="auto_escalation" name="auto_escalation" value="1"
+                   {% if config_settings.auto_escalation %}checked{% endif %}>
+            <label class="form-check-label fw-semibold" for="auto_escalation">
+              Background SLA Escalation Daemon
+            </label>
+            <div class="form-text text-muted small">
+              Continuously advances escalation levels based on elapsed SLA ratios.
+            </div>
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Auto-Close Grace</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" name="auto_close_days" value="{{ config_settings.auto_close_days }}" min="1" max="30">
+                <span class="input-group-text">days</span>
+              </div>
+              <span class="form-text text-muted" style="font-size:0.75rem">After resolution</span>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">SLA Early Warning</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" name="sla_warning_pct" value="{{ config_settings.sla_warning_pct }}" min="10" max="95">
+                <span class="input-group-text">%</span>
+              </div>
+              <span class="form-text text-muted" style="font-size:0.75rem">Yellow alert trigger</span>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Stalled Ticket Nudge</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" name="stalled_hours" value="{{ config_settings.stalled_hours }}" min="6" max="168">
+                <span class="input-group-text">hours</span>
+              </div>
+              <span class="form-text text-muted" style="font-size:0.75rem">Without updates</span>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm px-4">
+            <i class="bi bi-check2-circle me-1"></i> Save Automation Settings
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Manual Quick Triggers & Health -->
+  <div class="col-lg-6">
+    <!-- Quick Triggers Card -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white py-3 border-bottom">
+        <h5 class="card-title mb-0 fs-6 fw-bold text-dark">
+          <i class="bi bi-lightning-charge me-2 text-warning"></i> Manual Override & On-Demand Triggers
+        </h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Trigger automation routines instantly for testing or immediate administrative audit:
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <form method="POST" action="{{ url_for('admin_automation_trigger', action='sweep') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-arrow-repeat me-1"></i> Run Lifecycle Sweep
+            </button>
+          </form>
+
+          <form method="POST" action="{{ url_for('admin_automation_trigger', action='outage') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning btn-sm">
+              <i class="bi bi-broadcast me-1"></i> Check Outage Spikes
+            </button>
+          </form>
+
+          <form method="POST" action="{{ url_for('admin_automation_trigger', action='digest') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-success btn-sm">
+              <i class="bi bi-envelope-paper me-1"></i> Dispatch Executive Digest
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Automation Audit Log -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 border-bottom d-flex align-items-center justify-content-between">
+        <h5 class="card-title mb-0 fs-6 fw-bold text-dark">
+          <i class="bi bi-journal-text me-2 text-primary"></i> Recent Automated System Actions
+        </h5>
+        <span class="badge bg-secondary-subtle text-secondary small">Last 30 Actions</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+          <table class="table table-hover table-striped align-middle mb-0" style="font-size:0.875rem">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th style="width:25%">Ticket</th>
+                <th style="width:20%">Transition</th>
+                <th style="width:40%">Action Detail</th>
+                <th style="width:15%">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in audit_logs %}
+              <tr>
+                <td>
+                  <span class="badge bg-light text-dark border">{{ log.ticket_code }}</span>
+                </td>
+                <td>
+                  <span class="badge bg-info-subtle text-info">{{ log.new_status }}</span>
+                </td>
+                <td class="text-truncate" style="max-width: 250px;" title="{{ log.remark }}">
+                  {{ log.remark }}
+                </td>
+                <td class="text-muted small">
+                  {{ log.created_at[11:16] if log.created_at else '-' }}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">
+                  No automated actions recorded yet. Automated logs will populate as tickets progress.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1711,6 +1711,108 @@ def api_escalation_check():
 
 
 # ===========================================================================
+# 9B. ADMIN AUTOMATION CONTROL CENTER
+# ===========================================================================
+
+@app.route("/admin/automation")
+@login_required
+@role_required("admin")
+def admin_automation():
+    db_conn = db.get_db()
+
+    cfg = {
+        "auto_assign": getattr(config, "AUTO_ASSIGN_ENABLED", True),
+        "emergency_triage": getattr(config, "EMERGENCY_TRIAGE_ENABLED", True),
+        "duplicate_link": getattr(config, "AUTO_DUPLICATE_LINK_ENABLED", True),
+        "auto_escalation": getattr(config, "AUTO_ESCALATION_ENABLED", True),
+        "auto_close_days": getattr(config, "AUTO_CLOSE_DAYS", 5),
+        "sla_warning_pct": int(getattr(config, "SLA_WARNING_PERCENT", 0.75) * 100),
+        "stalled_hours": getattr(config, "STALLED_TICKET_HOURS", 48),
+    }
+
+    history_cursor = db_conn.complaint_status_history.aggregate([
+        {"$match": {"is_automated": True}},
+        {"$sort": {"created_at": -1}},
+        {"$limit": 30},
+        {"$lookup": {"from": "complaints", "localField": "complaint_id", "foreignField": "_id", "as": "complaint"}},
+        {"$unwind": {"path": "$complaint", "preserveNullAndEmptyArrays": True}}
+    ])
+
+    audit_logs = []
+    for h in history_cursor:
+        c = h.get("complaint", {})
+        audit_logs.append({
+            "ticket_code": c.get("ticket_code", "N/A"),
+            "old_status": h.get("old_status"),
+            "new_status": h.get("new_status"),
+            "remark": h.get("remark"),
+            "created_at": h.get("created_at")
+        })
+
+    stats = {
+        "total_automated_actions": db_conn.complaint_status_history.count_documents({"is_automated": True}),
+        "total_escalations": db_conn.escalations.count_documents({"is_automated": True}),
+        "total_notices": db_conn.announcements.count_documents({"is_automated": True})
+    }
+
+    return render_template("admin/automation.html", config_settings=cfg, audit_logs=audit_logs, stats=stats)
+
+
+@app.route("/admin/automation/settings", methods=["POST"])
+@login_required
+@role_required("admin")
+def admin_automation_settings():
+    config.AUTO_ASSIGN_ENABLED = bool(request.form.get("auto_assign"))
+    config.EMERGENCY_TRIAGE_ENABLED = bool(request.form.get("emergency_triage"))
+    config.AUTO_DUPLICATE_LINK_ENABLED = bool(request.form.get("duplicate_link"))
+    config.AUTO_ESCALATION_ENABLED = bool(request.form.get("auto_escalation"))
+
+    try:
+        config.AUTO_CLOSE_DAYS = max(1, int(request.form.get("auto_close_days", 5)))
+    except ValueError:
+        pass
+
+    try:
+        config.SLA_WARNING_PERCENT = max(0.1, min(0.95, float(request.form.get("sla_warning_pct", 75)) / 100.0))
+    except ValueError:
+        pass
+
+    try:
+        config.STALLED_TICKET_HOURS = max(6, int(request.form.get("stalled_hours", 48)))
+    except ValueError:
+        pass
+
+    flash("Automation settings updated successfully.", "success")
+    return redirect(url_for("admin_automation"))
+
+
+@app.route("/admin/automation/trigger/<action>", methods=["POST"])
+@login_required
+@role_required("admin")
+def admin_automation_trigger(action):
+    db_conn = db.get_db()
+    if action == "sweep":
+        res = automation.run_lifecycle_sweep(db_conn)
+        esc = res.get("escalations", {}).get("escalated", 0)
+        warn = res.get("sla_warnings", {}).get("pre_breach_warned", 0)
+        closed = res.get("auto_closures", {}).get("auto_closed", 0)
+        flash(f"Manual Lifecycle Sweep complete: {esc} escalated, {warn} warned, {closed} auto-closed.", "success")
+    elif action == "outage":
+        outages = automation.detect_campus_outage_spike(db_conn)
+        if outages:
+            flash(f"Outage check complete: {len(outages)} campus outage spike(s) detected and notice(s) published.", "warning")
+        else:
+            flash("Outage check complete: No complaint volume anomalies detected.", "info")
+    elif action == "digest":
+        digest = automation.generate_executive_digest(db_conn)
+        flash(f"Executive digest generated and dispatched to administrators ({digest['resolution_rate']}% resolution rate).", "success")
+    else:
+        flash("Unknown automation action.", "danger")
+
+    return redirect(url_for("admin_automation"))
+
+
+# ===========================================================================
 # 10. M10 — DUPLICATE DETECTION
 # ===========================================================================
 

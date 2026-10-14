@@ -780,3 +780,186 @@ def handle_multi_reopen_escalation(db_conn, complaint_id, student_id):
     return True
 
 
+# ===========================================================================
+# PHASE 4: CAMPUS INTELLIGENCE & EXECUTIVE REPORTING
+# ===========================================================================
+
+def detect_campus_outage_spike(db_conn, lookback_hours=2, threshold=4):
+    """
+    Spike Anomaly Detector:
+    If threshold (default 4) or more grievances are filed in the same category
+    within lookback_hours (default 2h), automatically flags a Campus Outage
+    and publishes an immediate Advisory Notice on the campus notice board.
+    """
+    now_dt = datetime.now()
+    cutoff_dt = now_dt - timedelta(hours=lookback_hours)
+    cutoff_str = cutoff_dt.strftime(helpers.DT_FORMAT)
+    now_str = helpers.now_str()
+
+    recent_complaints = list(db_conn.complaints.find({
+        "created_at": {"$gte": cutoff_str}
+    }))
+
+    # Group by category_id
+    cat_counts = {}
+    for c in recent_complaints:
+        cid = str(c.get("category_id"))
+        cat_counts[cid] = cat_counts.get(cid, 0) + 1
+
+    outages_detected = []
+    admins = list(db_conn.users.find({"role": "admin"}))
+
+    for cid_str, count in cat_counts.items():
+        if count >= threshold and cid_str and cid_str != "None":
+            cat_oid = ObjectId(cid_str) if len(cid_str) == 24 else cid_str
+            cat = db_conn.categories.find_one({"_id": cat_oid})
+            cat_name = cat.get("name", "Facility") if cat else "Facility"
+
+            dept = None
+            if cat and cat.get("department_id"):
+                dept = db_conn.departments.find_one({"_id": cat["department_id"]})
+            dept_name = dept.get("name", "Technical Staff") if dept else "Technical Staff"
+
+            # Check if an automated notice for this category was already created recently
+            existing_notice = db_conn.announcements.find_one({
+                "category_id": cat_oid,
+                "is_automated": True,
+                "created_at": {"$gte": (now_dt - timedelta(hours=4)).strftime(helpers.DT_FORMAT)}
+            })
+
+            if not existing_notice:
+                notice_doc = {
+                    "title": f"⚠️ Campus Advisory: Elevated Reports in {cat_name}",
+                    "body": (
+                        f"The automated monitoring system has detected an elevated volume of reports "
+                        f"({count} complaints) regarding {cat_name} in the last {lookback_hours} hours. "
+                        f"The {dept_name} department has been notified and resolution is underway. "
+                        f"Please rest assured the issue is being actively investigated."
+                    ),
+                    "target": "all",
+                    "target_role": "all",
+                    "starts_at": now_str,
+                    "ends_at": helpers.add_days(now_str, 1),
+                    "is_active": 1,
+                    "is_automated": True,
+                    "category_id": cat_oid,
+                    "created_at": now_str
+                }
+                db_conn.announcements.insert_one(notice_doc)
+
+                # Alert administrators
+                for admin in admins:
+                    db_conn.notifications.insert_one({
+                        "user_id": admin["_id"],
+                        "message": f"📢 OUTAGE SPIKE: {count} complaints filed under '{cat_name}' in {lookback_hours}h. Auto-notice published.",
+                        "link": "/admin/announcements",
+                        "is_read": False,
+                        "created_at": now_str
+                    })
+
+                outages_detected.append({
+                    "category_id": str(cat_oid),
+                    "category_name": cat_name,
+                    "complaint_count": count,
+                    "notice_created": True
+                })
+
+    return outages_detected
+
+
+def generate_executive_digest(db_conn):
+    """
+    Executive Analytics Digest:
+    Aggregates institutional grievance metrics and dispatches an executive
+    HTML summary to the Principal, Dean, and Administrators.
+    """
+    closed_statuses = list(config.CLOSED_STATUSES)
+
+    total_complaints = db_conn.complaints.count_documents({})
+    total_open = db_conn.complaints.count_documents({"status": {"$nin": closed_statuses}})
+    total_resolved = db_conn.complaints.count_documents({"status": {"$in": ["Resolved", "Closed"]}})
+
+    # Calculate SLA breaches
+    now = datetime.now()
+    open_tickets = list(db_conn.complaints.find({"status": {"$nin": closed_statuses}}))
+    breached_count = sum(1 for c in open_tickets if helpers.is_breached(c))
+
+    res_rate = round((total_resolved / total_complaints * 100), 1) if total_complaints > 0 else 100.0
+
+    # Top categories by volume
+    top_categories_cursor = db_conn.complaints.aggregate([
+        {"$group": {"_id": "$category_id", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 3},
+        {"$lookup": {"from": "categories", "localField": "_id", "foreignField": "_id", "as": "cat"}}
+    ])
+
+    top_categories = []
+    for item in top_categories_cursor:
+        c_name = item.get("cat", [{}])[0].get("name", "General") if item.get("cat") else "General"
+        top_categories.append(f"{c_name} ({item['count']} tickets)")
+
+    categories_html = "".join(f"<li>{tc}</li>" for tc in top_categories) or "<li>None</li>"
+
+    digest_data = {
+        "timestamp": helpers.now_str(),
+        "total_complaints": total_complaints,
+        "total_open": total_open,
+        "total_resolved": total_resolved,
+        "breached_count": breached_count,
+        "resolution_rate": res_rate,
+        "top_categories": top_categories
+    }
+
+    # Dispatch email to all admins
+    admins = list(db_conn.users.find({"role": "admin"}))
+    for admin in admins:
+        if admin.get("email"):
+            html_body = f"""
+            <div style="font-family:Inter,sans-serif;color:#1e293b;max-width:600px;margin:auto">
+              <h2 style="color:#33415c;border-bottom:2px solid #5b6ea8;padding-bottom:8px">
+                📊 Grievance360 — Executive Institutional Digest
+              </h2>
+              <p>Generated automatically on <strong>{digest_data['timestamp']}</strong>.</p>
+              
+              <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:0.95rem">
+                <tr style="background:#f1f5f9">
+                  <td style="padding:10px;border:1px solid #cbd5e1"><strong>Total Grievances Filed:</strong></td>
+                  <td style="padding:10px;border:1px solid #cbd5e1">{total_complaints}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px;border:1px solid #cbd5e1"><strong>Active Open Grievances:</strong></td>
+                  <td style="padding:10px;border:1px solid #cbd5e1"><span style="color:#d97706;font-weight:600">{total_open}</span></td>
+                </tr>
+                <tr style="background:#f1f5f9">
+                  <td style="padding:10px;border:1px solid #cbd5e1"><strong>Resolved / Closed:</strong></td>
+                  <td style="padding:10px;border:1px solid #cbd5e1"><span style="color:#16a34a;font-weight:600">{total_resolved} ({res_rate}%)</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:10px;border:1px solid #cbd5e1"><strong>SLA Breaches:</strong></td>
+                  <td style="padding:10px;border:1px solid #cbd5e1"><span style="color:#dc2626;font-weight:600">{breached_count}</span></td>
+                </tr>
+              </table>
+
+              <h4 style="color:#33415c;margin-bottom:6px">Top Issue Categories:</h4>
+              <ul style="color:#475569;margin-top:0">
+                {categories_html}
+              </ul>
+
+              <p style="text-align:center;margin:28px 0">
+                <a href="{config.PORTAL_URL}/admin" style="background:#5b6ea8;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+                  Open Admin Command Center
+                </a>
+              </p>
+            </div>
+            """
+            mail.send_async(
+                admin["email"],
+                f"[Executive Digest] Grievance Redressal Status Report — {res_rate}% Resolved",
+                html_body
+            )
+
+    return digest_data
+
+
+

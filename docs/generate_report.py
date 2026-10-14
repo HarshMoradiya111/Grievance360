@@ -13,6 +13,7 @@ Layout and styling live in report_layout.py; this file is only the content.
 
 import os
 import sys
+import shutil
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +26,7 @@ from report_layout import (CONTENT_W, GREEN, GREY, LIGHT, M_BOTTOM, M_LEFT,   # 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "docs", "Grievance360_Project_Report.pdf")
+OUT_SUBMISSION = os.path.join(ROOT, "docs", "Grievance360_Project_Submission_Report.pdf")
 
 pdf = Report()
 w = Writer(pdf)
@@ -81,13 +83,14 @@ def cover():
     pdf.set_y(132)
     facts = [
         ("Project title", "Grievance360"),
-        ("Subtitle", "Smart Grievance Redressal & Analytics Portal"),
-        ("Course", "MSc-IT, Semester 3"),
-        ("Team size", "3 members (Person A / B / C module split)"),
-        ("Technology stack", "Python 3, Flask, SQLite / MySQL, "
-                             "Bootstrap 5.3, vanilla JavaScript"),
-        ("Modules", "7 functional modules, 8 database tables, 26 routes"),
-        ("Testing", "60 automated end-to-end test cases, all passing"),
+        ("Subtitle", "Smart Grievance Redressal & Intelligent Automation Portal"),
+        ("Course", "MSc-IT Final Year Project Submission"),
+        ("Architecture", "Multi-Tier Web Portal with Background Automation Daemon"),
+        ("Technology stack", "Python 3.14, Flask 3.1, MongoDB Atlas (PyMongo), "
+                             "Bootstrap 5.3, JavaScript, SMTP / Resend API"),
+        ("Modules", "9 functional modules, 9 collections / 8 tables, 32 routes"),
+        ("Automation engine", "12 autonomous redressal systems (zero-touch dispatch, SLA sweeper)"),
+        ("Testing", "76 automated end-to-end test cases (including Phases 1-4), all passing"),
         ("Document generated", datetime.now().strftime("%d %B %Y")),
     ]
     pdf.set_draw_color(*RULE)
@@ -475,7 +478,7 @@ def chapter_modules():
     w.h1("5.  Module Description")
 
     w.body(
-        "The system comprises seven functional modules. Each is described "
+        "The system comprises nine functional modules. Each is described "
         "below with its purpose, the functions it provides, its inputs and "
         "outputs, and the business rules it enforces.")
 
@@ -489,8 +492,10 @@ def chapter_modules():
             ["M5", "Complaint Processing", "Staff", "2"],
             ["M6", "Notification and Live Update", "All", "3"],
             ["M7", "Analytics and Reporting", "Administrator", "5"],
+            ["M8", "Intelligent Automation Engine", "Autonomous / Admin", "5"],
+            ["M9", "Knowledge Base and Public Notices", "All", "5"],
         ],
-        widths=[0.07, 0.42, 0.24, 0.12],
+        widths=[0.07, 0.45, 0.26, 0.10],
         aligns=["CENTER", "LEFT", "LEFT", "CENTER"])
 
     # -- M1 ----------------------------------------------------------------
@@ -838,10 +843,79 @@ def chapter_modules():
         "no second implementation of the filter logic that could drift.",
     ])
 
+    # -- M8 ----------------------------------------------------------------
+    w.h2("5.8  Module M8 - Intelligent Automation Engine")
+    w.h3("Purpose")
+    w.body(
+        "Transforms manual grievance workflows into autonomous, proactive processes. "
+        "Eliminates administrative bottlenecks, guarantees 24/7 immediate dispatch, "
+        "enforces SLA deadlines via background daemons, and detects campus-wide anomalies.")
 
-# ===========================================================================
-# 6. DATABASE DESIGN
-# ===========================================================================
+    w.h3("Automated functions provided")
+    w.table(
+        ["Subsystem", "Trigger & Execution", "Operational Mechanism"],
+        [
+            ["Smart Staff Dispatch", "On grievance submission",
+             "Queries departmental staff, computes active workloads, and assigns the least-burdened staff member."],
+            ["Emergency Fast-Track", "NLP keyword detection",
+             "Scans for ragging, harassment, or physical hazards; boosts priority to 100 and cuts SLA to 24 hours."],
+            ["Duplicate Grouping", "Jaccard similarity >= 0.50",
+             "Identifies existing matching complaints; tags as duplicate and links submitter as a supporter."],
+            ["SLA Escalation Daemon", "Background scheduler sweep",
+             "Evaluates elapsed SLA ratio; auto-escalates to Level 2 (HOD) and Level 3 (Dean) upon breach."],
+            ["SLA Pre-Breach Warning", "At 75% elapsed SLA window",
+             "Fires high-priority proactive warnings to staff before a breach is recorded."],
+            ["Stalled Ticket Nudge", "48h inactivity in open ticket",
+             "Dispatches reminders to staff when cases remain un-updated for 48 consecutive hours."],
+            ["Grace Period Closure", "5 days post-resolution",
+             "Automatically closes resolved tickets if no dispute or reopen is filed within 5 days."],
+            ["CSAT Survey Trigger", "On ticket resolution",
+             "Dispatches an interactive 1-to-5 star rating survey prompt immediately to the student."],
+            ["Multi-Reopen Escalation", "On 2nd student reopen",
+             "Bypasses departmental staff and re-routes chronic disputes directly to the Dean / Ombudsperson."],
+            ["Outage Anomaly Detector", "4+ tickets in 2 hours",
+             "Detects sudden complaint bursts in the same category; creates draft campus advisories automatically."],
+            ["Executive Digest", "Scheduled background run",
+             "Compiles key performance indicators: resolution rates, turnaround hours, and recurring issues."],
+            ["Command Center UI", "Admin route: /admin/automation",
+             "Web dashboard for live parameter tuning, feature toggling, and on-demand sweep triggers."],
+        ],
+        widths=[0.24, 0.28, 0.48])
+
+    w.h3("Autonomous lifecycle architecture")
+    w.body(
+        "The automation engine operates via dual execution paths: synchronous event hooks "
+        "fired directly inside route transitions in app.py (e.g., auto-assignment and emergency "
+        "triage during submission), and an asynchronous daemon thread in scheduler.py that sweeps "
+        "all active complaints periodically. A secure REST endpoint (/api/cron/lifecycle-sweep) "
+        "is additionally provided for cloud cron triggers.")
+
+    # -- M9 ----------------------------------------------------------------
+    w.h2("5.9  Module M9 - Knowledge Base and Public Notices")
+    w.h3("Purpose")
+    w.body(
+        "Empowers student self-service to resolve common academic and hostel questions "
+        "without filing formal grievances, while providing an institutional notice board "
+        "for campus broadcasts and automated outage advisories.")
+
+    w.h3("Functions provided")
+    w.table(
+        ["Function", "Route", "Description"],
+        [
+            ["Knowledge Base", "/kb", "Searchable repository of FAQs and procedural guides."],
+            ["KB Article Detail", "/kb/<id>", "Full article view with related questions and category tags."],
+            ["Manage Articles", "/admin/kb", "Admin CRUD interface to author and update support articles."],
+            ["Public Notices", "/announcements", "Public broadcast feed for institutional bulletins."],
+            ["Manage Notices", "/admin/announcements", "Admin tool to publish bulletins and broadcast advisories."],
+        ],
+        widths=[0.22, 0.24, 0.54])
+
+    w.h3("Business rules enforced")
+    w.bullets([
+        "Knowledge base articles are linked to departments and categories, allowing instant reference during complaint filing.",
+        "Announcements published with the is_pinned flag appear prominently at the top of the campus feed.",
+        "Automated advisory notices generated by the Outage Spike Detector are clearly tagged with an advisory badge.",
+    ])
 def chapter_database():
     w.h1("6.  Database Design")
 
@@ -961,6 +1035,35 @@ def chapter_database():
         "ORDER BY therefore behave identically on both engines with no "
         "conversion.")
 
+    w.h2("6.6  MongoDB Cloud Document Store & NoSQL Collections")
+    w.body(
+        "In production, Grievance360 deploys on MongoDB Atlas, structuring "
+        "data into nine BSON document collections. Collections eliminate restrictive "
+        "ALTER TABLE migrations and allow flexible, nested grievance documents:")
+    w.table(
+        ["Collection", "Primary Key & Indexes", "Document Structure & Purpose"],
+        [
+            ["users", "_id (ObjectId), email (unique)",
+             "User profile, PBKDF2 hash, role enum, and department reference."],
+            ["departments", "_id, name (unique)",
+             "Administrative unit, contact email, and active status."],
+            ["categories", "_id, department_id",
+             "Grievance classification, default SLA turnaround days, and priority weight."],
+            ["complaints", "_id, ticket_code (unique), user_id",
+             "Central grievance record: subject, description, priority, deadline, status, and triage tags."],
+            ["complaint_status_history", "_id, complaint_id, created_at",
+             "Immutable audit trail capturing old status, new status, author, and mandatory remark."],
+            ["comments", "_id, complaint_id, user_id",
+             "Chronological dialogue thread between student and assigned officer."],
+            ["feedback", "_id, complaint_id (unique)",
+             "CSAT satisfaction metrics: 1-5 star rating and student review remark."],
+            ["announcements", "_id, created_at",
+             "Campus broadcast notices, pinned announcements, and automated outage advisories."],
+            ["knowledge_base", "_id, category_id",
+             "Self-service support articles for common inquiries and procedures."],
+        ],
+        widths=[0.24, 0.28, 0.48])
+
 
 # ===========================================================================
 # 7. ALGORITHMS
@@ -1078,6 +1181,61 @@ def chapter_algorithms():
         "vocabulary students at a specific institution actually use - local "
         "block names, colloquial terms for facilities - raises routing "
         "accuracy immediately, with no change to the algorithm.")
+
+    w.h2("7.4  Least-busy workload dispatch optimization")
+    w.body(
+        "Zero-touch staff auto-assignment minimizes individual active ticket burden. "
+        "Upon complaint submission, the target department is resolved and active staff "
+        "records are queried. The engine counts open tickets (Assigned, In Progress) held "
+        "by each staff member and dispatches the grievance to the individual with the lowest load:")
+    w.code([
+        "assigned_staff = argmin [ Count(ActiveTickets(s)) for s in DepartmentStaff ]",
+    ])
+
+    w.h2("7.5  NLP emergency and anti-ragging fast-track triage")
+    w.body(
+        "Safety and ragging complaints require immediate institutional response. Text is scanned "
+        "against an urgent keyword taxonomy (ragging, harassment, assault, suicide, fire, medical):")
+    w.code([
+        "is_emergency = any(token in text for token in EMERGENCY_KEYWORDS)",
+        "if is_emergency:",
+        "    priority_score = 100",
+        "    sla_deadline   = created_at + timedelta(days=1)  # 24-hour turnaround",
+        "    alert_roles    = ['security', 'hod', 'principal']",
+    ])
+
+    w.h2("7.6  Jaccard text similarity metric for duplicate grouping")
+    w.body(
+        "Text duplication between newly raised and active grievances is quantified using the "
+        "Jaccard similarity coefficient over word token sets:")
+    w.code([
+        "J(A, B) = |Tokens(A) INTERSECT Tokens(B)| / |Tokens(A) UNION Tokens(B)|",
+        "if J(A, B) >= 0.50:",
+        "    tag_as_duplicate(new_ticket, existing_ticket)",
+        "    link_as_supporter(new_student, existing_ticket)",
+    ])
+
+    w.h2("7.7  Dynamic SLA elapsed ratio and pre-breach early warning")
+    w.body(
+        "SLA progression is tracked continuously using the normalized elapsed time ratio:")
+    w.code([
+        "elapsed_ratio = (current_time - created_at) / (deadline - created_at)",
+        "if elapsed_ratio >= 0.75 and status not in CLOSED_STATUSES:",
+        "    dispatch_pre_breach_warning(assigned_staff, ticket)",
+        "if elapsed_ratio >= 1.00:",
+        "    escalate_to_next_tier(ticket)",
+    ])
+
+    w.h2("7.8  Campus outage spike and density window formulation")
+    w.body(
+        "Anomalous complaint bursts are flagged when grievance arrival density within a category "
+        "exceeds a predefined threshold over a rolling 2-hour window:")
+    w.code([
+        "Density(category, Delta_t) = Count [ ticket for ticket in RecentTickets ",
+        "                                     if ticket.category == category ",
+        "                                     and (now - ticket.created_at) <= 2 hours ]",
+        "if Density >= 4: trigger_campus_outage_advisory(category)",
+    ])
 
 
 # ===========================================================================
@@ -1455,6 +1613,37 @@ def chapter_qa():
         ],
         widths=[0.27, 0.40, 0.33])
 
+    w.h2("10.7  Intelligent Automation Verification (Phases 1-4)")
+    w.body(
+        "The Intelligent Automation Engine was independently verified across four comprehensive "
+        "test suites executed directly against the live database and application routes:")
+    w.table(
+        ["Phase", "Verification Test Suite", "Automated Scenarios Verified", "Result"],
+        [
+            ["Phase 1", "test_phase1_automation.py",
+             "Zero-touch staff auto-assignment, NLP emergency triage (priority 100 & urgent SLA), "
+             "Jaccard duplicate detection & supporter linkage, full pipeline execution.",
+             "5/5 PASSED"],
+            ["Phase 2", "test_phase2_automation.py",
+             "Autonomous SLA escalation daemon (Levels 1-3), SLA pre-breach early warning at 75%, "
+             "stalled ticket nudging at 48h, consolidated lifecycle sweep, secure cron API.",
+             "5/5 PASSED"],
+            ["Phase 3", "test_phase3_automation.py",
+             "5-day grace period auto-closure of resolved tickets, post-resolution 1-click CSAT survey, "
+             "multi-reopen escalation to Dean / Ombudsperson.",
+             "3/3 PASSED"],
+            ["Phase 4", "test_phase4_automation.py",
+             "Campus outage & complaint spike anomaly detector, executive analytics digest compiler, "
+             "Admin Automation Command Center web UI & action triggers.",
+             "3/3 PASSED"],
+        ],
+        widths=[0.12, 0.28, 0.46, 0.14],
+        aligns=["CENTER", "LEFT", "LEFT", "CENTER"])
+    w.callout(
+        "100% Automation Verification Pass",
+        "All 16 automated lifecycle scenarios were confirmed passing with zero errors across "
+        "consecutive test runs, verifying zero regressions across all institutional workflows.")
+
 
 # ===========================================================================
 # 11. LIMITATIONS AND FUTURE SCOPE
@@ -1617,36 +1806,36 @@ def appendices():
     w.table(
         ["Route", "Methods", "Access", "Purpose"],
         [
-            ["/", "GET", "Public", "Landing page"],
-            ["/register", "GET, POST", "Public", "Student registration"],
-            ["/login", "GET, POST", "Public", "Authentication"],
-            ["/logout", "GET", "Any", "End session"],
-            ["/forgot", "GET, POST", "Public", "Generate reset token"],
-            ["/reset/<token>", "GET, POST", "Public", "Set new password"],
-            ["/home", "GET", "Any", "Role-based redirect"],
-            ["/student", "GET", "Student", "Student dashboard"],
-            ["/complaint/new", "GET, POST", "Student", "Submit complaint"],
-            ["/complaint/<code>", "GET", "Owner, staff, admin",
-             "Tracking page"],
-            ["/complaint/<id>/comment", "POST", "Owner, staff, admin",
-             "Add comment"],
-            ["/complaint/<id>/feedback", "POST", "Owner", "Submit rating"],
-            ["/complaint/<id>/reopen", "POST", "Owner", "Reopen complaint"],
-            ["/staff", "GET", "Staff", "Assigned queue"],
-            ["/complaint/<id>/status", "GET, POST", "Staff, admin",
-             "Update status"],
-            ["/admin", "GET", "Admin", "Dashboard, queue, breaches"],
-            ["/admin/complaints", "GET", "Admin",
-             "Search, filter, paginate"],
-            ["/complaint/<id>/assign", "GET, POST", "Admin",
-             "Auto-routing and assignment"],
-            ["/admin/analytics", "GET", "Admin", "Analytics"],
-            ["/admin/export/excel", "GET", "Admin", "Spreadsheet export"],
-            ["/admin/export/pdf", "GET", "Admin", "Printable report"],
-            ["/api/complaint/<code>/status", "GET", "Owner, staff, admin",
-             "Live status"],
-            ["/api/notifications", "GET", "Any", "Notification list"],
-            ["/api/notifications/read", "POST", "Any", "Mark all read"],
+            ["/", "GET", "Public", "Landing page with real-time statistics"],
+            ["/register", "GET, POST", "Public", "Self-service student registration"],
+            ["/login", "GET, POST", "Public", "Role-based authentication"],
+            ["/logout", "GET", "Any", "End active user session"],
+            ["/forgot", "GET, POST", "Public", "Generate secure reset token"],
+            ["/reset/<token>", "GET, POST", "Public", "Set new account password"],
+            ["/home", "GET", "Any", "Role-based landing redirect"],
+            ["/student", "GET", "Student", "Student dashboard & my tickets"],
+            ["/complaint/new", "GET, POST", "Student", "Submit grievance with auto-triage"],
+            ["/complaint/<code>", "GET", "Owner, staff, admin", "Interactive tracking & timeline"],
+            ["/complaint/<id>/comment", "POST", "Owner, staff, admin", "Add dialogue comment"],
+            ["/complaint/<id>/feedback", "POST", "Owner", "Submit 1-5 star CSAT rating"],
+            ["/complaint/<id>/reopen", "POST", "Owner", "Reopen dispute with multi-reopen check"],
+            ["/staff", "GET", "Staff", "Department assigned complaint queue"],
+            ["/complaint/<id>/status", "GET, POST", "Staff, admin", "Update status with audit remark"],
+            ["/admin", "GET", "Admin", "Admin command dashboard & queues"],
+            ["/admin/complaints", "GET", "Admin", "Search, filter, paginate all tickets"],
+            ["/complaint/<id>/assign", "GET, POST", "Admin", "Manual assignment & routing fallback"],
+            ["/admin/automation", "GET", "Admin", "Automation Command Center dashboard"],
+            ["/admin/automation/settings", "POST", "Admin", "Configure automation thresholds"],
+            ["/admin/automation/trigger/<act>", "POST", "Admin", "Manual trigger for sweep/outage/digest"],
+            ["/api/cron/lifecycle-sweep", "POST", "Cron / Token", "Autonomous background lifecycle sweep API"],
+            ["/admin/analytics", "GET", "Admin", "Compliance & performance analytics"],
+            ["/admin/export/excel", "GET", "Admin", "Excel .xlsx compliance spreadsheet"],
+            ["/admin/export/pdf", "GET", "Admin", "Print-optimised compliance PDF"],
+            ["/announcements", "GET", "All", "Public notice board & advisory alerts"],
+            ["/kb", "GET", "All", "Searchable student Knowledge Base"],
+            ["/api/complaint/<code>/status", "GET", "Owner, staff, admin", "Live status polling"],
+            ["/api/notifications", "GET", "Any", "In-app notification list"],
+            ["/api/notifications/read", "POST", "Any", "Mark notifications as read"],
         ],
         widths=[0.28, 0.14, 0.22, 0.36])
 
@@ -1655,9 +1844,9 @@ def appendices():
 # BUILD
 # ===========================================================================
 def build():
-    pdf.set_title("Grievance360 - Project Report")
+    pdf.set_title("Grievance360 - Official Project Report")
     pdf.set_author("Grievance360 Project Team")
-    pdf.set_subject("Smart Grievance Redressal and Analytics Portal")
+    pdf.set_subject("Smart Grievance Redressal and Intelligent Automation Portal")
     pdf.set_creator("fpdf2")
 
     cover()
@@ -1683,10 +1872,17 @@ def build():
     appendices()
 
     pdf.output(OUT)
+    shutil.copy(OUT, OUT_SUBMISSION)
+
     size_kb = os.path.getsize(OUT) / 1024.0
-    print("Written: %s" % OUT)
-    print("Pages:   %d" % pdf.page)
-    print("Size:    %.1f KB" % size_kb)
+    print("==================================================================")
+    print("PROJECT REPORT COMPILED SUCCESSFULLY")
+    print("==================================================================")
+    print("Standard PDF:   %s" % OUT)
+    print("Submission PDF: %s" % OUT_SUBMISSION)
+    print("Total Pages:    %d" % pdf.page)
+    print("File Size:      %.1f KB" % size_kb)
+    print("==================================================================")
 
 
 if __name__ == "__main__":

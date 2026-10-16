@@ -18,9 +18,13 @@
       <div class="ge-stat-label">{{ d.name }}</div>
       <div class="small text-muted mt-1">
         SLA compliance:
+        {% if d.compliance is not none %}
         <span class="{{ 'text-success' if d.compliance >= 80 else 'text-warning' if d.compliance >= 50 else 'text-danger' }}">
           {{ d.compliance }}%
         </span>
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
       </div>
     </div>
   </div>

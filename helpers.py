@@ -156,8 +156,8 @@ def suggest_department(subject, description, departments):
 
     best_name = max(scores, key=scores.get)
     for dept in departments:
-        if dept["name"] == best_name:
-            return dept["id"]
+        if dept.get("name") == best_name:
+            return dept.get("id") or str(dept.get("_id"))
     return None
 
 

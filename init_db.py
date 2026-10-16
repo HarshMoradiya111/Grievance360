@@ -141,10 +141,19 @@ def seed(connection):
 def main():
     print("Grievance360 database setup (engine: %s)" % config.DB_ENGINE)
 
+    os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+
+    if config.DB_ENGINE == "mongodb":
+        import seed_mongo
+        print("\nDone. Login accounts:")
+        print("  admin    %-28s / %s" % ("admin@grievance360.edu", "admin123"))
+        print("  staff    %-28s / %s" % ("it.staff@grievance360.edu", "staff123"))
+        print("  student  %-28s / %s" % ("harsh@student.edu", "student123"))
+        print("Then:  python app.py")
+        return
+
     if config.DB_ENGINE == "sqlite":
         os.makedirs(os.path.dirname(config.SQLITE_PATH), exist_ok=True)
-
-    os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
 
     try:
         connection = db._connect()

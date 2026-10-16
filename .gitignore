@@ -36,6 +36,8 @@ test_phase*
 docs/
 *.docx
 *.pdf
+PROJECT_DOCUMENTATION_REPORT_GUIDE.md
+
 
 # Internal planning and scratch markdown files (only README.md tracked)
 AUTOMATION_*.md

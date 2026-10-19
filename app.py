@@ -493,9 +493,29 @@ def student_dashboard():
             counts["breached"] += 1
 
     profile_missing = student_profile_missing(current_user.id)
+    now = helpers.now_str()
+    notices_cursor = db_conn.announcements.aggregate([
+        {"$match": {
+            "is_active": {"$in": [1, True, "1"]},
+            "starts_at": {"$lte": now},
+            "ends_at": {"$gte": now},
+            "audience_role": {"$in": ["all", "student"]}
+        }},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "cat"}},
+        {"$sort": {"starts_at": -1}},
+        {"$limit": 3}
+    ])
+    active_notices = []
+    for n in notices_cursor:
+        n["id"] = str(n["_id"])
+        c = n.get("cat", [{}])[0] if n.get("cat") else {}
+        n["category_name"] = c.get("name")
+        active_notices.append(n)
+
     return render_template("student/dashboard.html",
                            complaints=complaints, counts=counts,
-                           profile_missing=profile_missing)
+                           profile_missing=profile_missing,
+                           active_notices=active_notices)
 
 
 @app.route("/complaint/new", methods=["GET", "POST"])
@@ -1537,9 +1557,44 @@ def api_notifications():
             "created_at": str(created_val) if created_val else "",
         })
 
+    now = helpers.now_str()
+    ann_match = {
+        "is_active": {"$in": [1, True, "1"]},
+        "starts_at": {"$lte": now},
+        "ends_at": {"$gte": now},
+    }
+    if current_user.role != "admin":
+        ann_match["$or"] = [
+            {"audience_role": "all"},
+            {"audience_role": current_user.role}
+        ]
+        
+    ann_cursor = db_conn.announcements.aggregate([
+        {"$match": ann_match},
+        {"$lookup": {"from": "categories", "localField": "category_id", "foreignField": "_id", "as": "cat"}},
+        {"$sort": {"starts_at": -1}},
+        {"$limit": 5}
+    ])
+    announcements_list = []
+    for a in ann_cursor:
+        c = a.get("cat", [{}])[0] if a.get("cat") else {}
+        announcements_list.append({
+            "id": str(a["_id"]),
+            "title": a.get("title", ""),
+            "body": a.get("body", ""),
+            "category_name": c.get("name", ""),
+            "audience_role": a.get("audience_role", "all"),
+            "starts_at": a.get("starts_at", ""),
+            "ends_at": a.get("ends_at", ""),
+            "pretty_ends": helpers.pretty_date(a.get("ends_at")),
+            "time_ago": helpers.time_ago(a.get("created_at") or a.get("starts_at")),
+            "link": url_for("announcements")
+        })
+
     return jsonify({
         "unread": unread,
         "items": items,
+        "announcements": announcements_list
     })
 
 
@@ -1609,14 +1664,22 @@ def api_public_notifications():
                 "link": f"/track/{c.get('ticket_code')}",
             })
 
-    announcements_cursor = db_conn.announcements.find({}).sort("created_at", -1).limit(5)
+    now = helpers.now_str()
+    ann_match = {
+        "is_active": {"$in": [1, True, "1"]},
+        "starts_at": {"$lte": now},
+        "ends_at": {"$gte": now},
+        "audience_role": {"$in": ["all", "student"]}
+    }
+    announcements_cursor = db_conn.announcements.find(ann_match).sort("starts_at", -1).limit(5)
     ann_items = []
     for a in announcements_cursor:
-        c_at = a.get("created_at")
+        c_at = a.get("created_at") or a.get("starts_at")
         ann_items.append({
             "id": str(a.get("_id")),
-            "title": a.get("title", "Announcement"),
-            "message": a.get("message", ""),
+            "title": a.get("title", "Campus Notice"),
+            "body": a.get("body", ""),
+            "message": a.get("body", ""),
             "time_ago": helpers.time_ago(c_at),
             "at": helpers.pretty_date(c_at),
             "created_at": str(c_at) if c_at else "",
@@ -2360,8 +2423,20 @@ def kb_article(article_id):
         from flask import session
         already_rated = session.get(key, False)
         
+    related_articles = []
+    cat_match = {"category_id": article["category_id"]} if article.get("category_id") else {}
+    rel_cursor = db_conn.kb_articles.find({
+        **cat_match,
+        "is_published": 1,
+        "_id": {"$ne": article["_id"]}
+    }).sort([("helpful_yes", -1), ("views", -1)]).limit(3)
+    for r in rel_cursor:
+        r["id"] = str(r["_id"])
+        related_articles.append(r)
+        
     return render_template("student/kb_article.html", article=article,
-                           already_rated=already_rated)
+                           already_rated=already_rated,
+                           related_articles=related_articles)
 
 
 @app.route("/kb/<article_id>/helpful", methods=["POST"])
@@ -2384,6 +2459,56 @@ def kb_helpful(article_id):
     else:
         flash("You have already rated this article.", "info")
     return redirect(url_for("kb_article", article_id=article_id))
+
+
+@app.route("/kb/<article_id>/deflect", methods=["POST"])
+@login_required
+def kb_deflect(article_id):
+    from flask import session
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    a_oid = ObjectId(article_id) if ObjectId.is_valid(article_id) else None
+    if not a_oid: abort(404)
+    article = db_conn.kb_articles.find_one({"_id": a_oid, "is_published": 1})
+    if article is None: abort(404)
+    
+    key = "kb_deflected_%s" % article_id
+    if not session.get(key):
+        db_conn.kb_articles.update_one({"_id": a_oid}, {"$inc": {"deflections": 1, "helpful_yes": 1}})
+        session[key] = True
+        flash("Glad we could resolve your question without needing a complaint!", "success")
+    else:
+        flash("You have already confirmed this article resolved your issue.", "info")
+    return redirect(url_for("kb_article", article_id=article_id))
+
+
+@app.route("/api/kb/suggest")
+@login_required
+def api_kb_suggest():
+    category_id = request.args.get("category_id", "").strip()
+    q           = request.args.get("q", "").strip()
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    
+    match_stage = {"is_published": 1}
+    if category_id and ObjectId.is_valid(category_id):
+        match_stage["category_id"] = ObjectId(category_id)
+        
+    if q:
+        match_stage["$or"] = [
+            {"title": {"$regex": q, "$options": "i"}},
+            {"body": {"$regex": q, "$options": "i"}}
+        ]
+        
+    cursor = db_conn.kb_articles.find(match_stage).sort([("helpful_yes", -1), ("views", -1)]).limit(3)
+    items = []
+    for a in cursor:
+        items.append({
+            "id": str(a["_id"]),
+            "title": a.get("title", ""),
+            "url": url_for("kb_article", article_id=str(a["_id"]))
+        })
+    return jsonify({"items": items})
 
 
 @app.route("/admin/kb")
@@ -2476,14 +2601,15 @@ def announcements():
     db_conn = db.get_db()
     
     match_stage = {
-        "is_active": 1,
+        "is_active": {"$in": [1, True, "1"]},
         "starts_at": {"$lte": now},
         "ends_at": {"$gte": now},
-        "$or": [
+    }
+    if current_user.role != "admin":
+        match_stage["$or"] = [
             {"audience_role": "all"},
             {"audience_role": audience}
         ]
-    }
     
     rows_cursor = db_conn.announcements.aggregate([
         {"$match": match_stage},
@@ -2512,16 +2638,16 @@ def api_announcements():
     db_conn = db.get_db()
     
     match_stage = {
-        "is_active": 1,
+        "is_active": {"$in": [1, True, "1"]},
         "starts_at": {"$lte": now},
         "ends_at": {"$gte": now},
-        "$or": [
+    }
+    if current_user.role != "admin":
+        match_stage["$or"] = [
             {"audience_role": "all"},
             {"audience_role": audience}
         ]
-    }
     if category_id:
-        # In SQL it had OR a.category_id IS NULL
         cat_id = ObjectId(category_id) if len(category_id) == 24 else category_id
         match_stage["$and"] = [
             {"$or": [
@@ -2570,6 +2696,7 @@ def admin_announcements():
 @login_required
 @role_required("admin")
 def admin_announcement_save(ann_id=None):
+    from datetime import datetime, timedelta
     db_conn = db.get_db()
     ann = None
     a_oid = ObjectId(ann_id) if ann_id and ObjectId.is_valid(ann_id) else None
@@ -2581,14 +2708,19 @@ def admin_announcement_save(ann_id=None):
     for d in departments: d["id"] = str(d["_id"])
     categories  = list(db_conn.categories.find().sort("name", 1))
     for c in categories: c["id"] = str(c["_id"])
+
+    now_dt = datetime.now()
+    default_starts = now_dt.strftime("%Y-%m-%dT%H:%M")
+    default_ends = (now_dt + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M")
+
     if request.method == "POST":
         title    = request.form.get("title", "").strip()
         body     = request.form.get("body", "").strip()
         audience = request.form.get("audience_role", "all")
         dept_id  = request.form.get("department_id") or None
         cat_id   = request.form.get("category_id") or None
-        starts   = request.form.get("starts_at", "")
-        ends     = request.form.get("ends_at", "")
+        starts   = request.form.get("starts_at", "").strip()
+        ends     = request.form.get("ends_at", "").strip()
         errors = []
         if not title: errors.append("Headline is required.")
         if not starts or not ends: errors.append("Start and end times are required.")
@@ -2598,11 +2730,18 @@ def admin_announcement_save(ann_id=None):
         if errors:
             return render_template("admin/announcement_form.html",
                                    ann=ann, departments=departments,
-                                   categories=categories, form=request.form)
-        starts_dt = starts.replace("T", " ") + ":00" if len(starts) == 16 else starts
-        ends_dt   = ends.replace("T", " ") + ":00"   if len(ends)   == 16 else ends
+                                   categories=categories, form=request.form,
+                                   default_starts=default_starts, default_ends=default_ends)
+        starts_clean = starts.replace("T", " ").strip()
+        if len(starts_clean) == 16:
+            starts_clean += ":00"
+        ends_clean = ends.replace("T", " ").strip()
+        if len(ends_clean) == 16:
+            ends_clean += ":00"
+            
         dept_oid = ObjectId(dept_id) if dept_id and ObjectId.is_valid(dept_id) else None
         cat_oid = ObjectId(cat_id) if cat_id and ObjectId.is_valid(cat_id) else None
+        now_ts = helpers.now_str()
 
         if a_oid:
             db_conn.announcements.update_one(
@@ -2610,21 +2749,53 @@ def admin_announcement_save(ann_id=None):
                 {"$set": {
                     "title": title, "body": body, "audience_role": audience,
                     "department_id": dept_oid, "category_id": cat_oid,
-                    "starts_at": starts_dt, "ends_at": ends_dt
+                    "starts_at": starts_clean, "ends_at": ends_clean
                 }}
             )
         else:
-            db_conn.announcements.insert_one({
+            ins_res = db_conn.announcements.insert_one({
                 "title": title, "body": body, "audience_role": audience,
                 "department_id": dept_oid, "category_id": cat_oid,
-                "starts_at": starts_dt, "ends_at": ends_dt,
-                "is_active": 1, "author_id": ObjectId(current_user.id)
+                "starts_at": starts_clean, "ends_at": ends_clean,
+                "is_active": 1, "author_id": ObjectId(current_user.id),
+                "created_at": now_ts
             })
-        flash("Announcement saved.", "success")
+            new_ann_id = ins_res.inserted_id
+
+            # Broadcast notifications to all users in the target audience
+            target_filter = {"is_active": True}
+            if audience in ("student", "staff"):
+                target_filter["role"] = audience
+            elif audience == "all":
+                target_filter["role"] = {"$in": ["student", "staff"]}
+            
+            if dept_oid:
+                target_filter["department_id"] = dept_oid
+                
+            target_users = list(db_conn.users.find(target_filter, {"_id": 1}))
+            notif_docs = []
+            for u in target_users:
+                if str(u["_id"]) == str(current_user.id):
+                    continue
+                notif_docs.append({
+                    "user_id": u["_id"],
+                    "message": f"📢 Notice: {title}",
+                    "link": "/announcements",
+                    "is_read": False,
+                    "created_at": now_ts,
+                    "type": "announcement",
+                    "announcement_id": new_ann_id
+                })
+            if notif_docs:
+                db_conn.notifications.insert_many(notif_docs)
+
+        flash("Announcement saved and broadcasted to campus.", "success")
         return redirect(url_for("admin_announcements"))
+
     return render_template("admin/announcement_form.html",
                            ann=ann, departments=departments,
-                           categories=categories, form={})
+                           categories=categories, form={},
+                           default_starts=default_starts, default_ends=default_ends)
 
 
 @app.route("/admin/announcements/<ann_id>/toggle", methods=["POST"])

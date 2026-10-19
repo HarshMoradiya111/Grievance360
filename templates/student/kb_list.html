@@ -2,68 +2,174 @@
 {% block title %}Help Centre &middot; Grievance360{% endblock %}
 {% block content %}
 
-<div class="ge-page-head">
-  <h4><i class="bi bi-book me-1"></i> Help Centre</h4>
-  <p class="ge-page-sub">
-    Find answers here before raising a complaint — most questions are answered below.
-  </p>
+<!-- Header -->
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-book-half me-2 text-primary"></i>Help & Knowledge Centre</h4>
+    <p class="ge-page-sub mb-0">
+      Search instant answers to campus questions, procedures, and institutional policies before raising a ticket.
+    </p>
+  </div>
+  {% if current_user.is_authenticated and current_user.role == 'student' %}
+  <a href="{{ url_for('raise_complaint') }}" class="btn btn-outline-primary btn-sm">
+    <i class="bi bi-pencil-square me-1"></i> Raise a Complaint
+  </a>
+  {% endif %}
 </div>
 
-<form method="get" class="ge-card p-3 mb-3">
-  <div class="row g-2">
-    <div class="col-12 col-sm-7">
-      <input type="text" class="form-control" name="q" value="{{ q }}"
-             placeholder="Search articles…">
+<!-- Search & Filter Card -->
+<div class="ge-card p-3 p-md-4 mb-4 shadow-sm">
+  <form method="get" action="{{ url_for('kb_list') }}">
+    <div class="row g-2 align-items-center">
+      <div class="col-12 col-md-7">
+        <div class="input-group">
+          <span class="input-group-text bg-white border-end-0 text-muted">
+            <i class="bi bi-search"></i>
+          </span>
+          <input type="text" class="form-control border-start-0 ps-0" name="q" value="{{ q }}"
+                 placeholder="Search articles, Wi-Fi, hall ticket, hostel, revaluation…">
+        </div>
+      </div>
+      <div class="col-8 col-md-3">
+        <select class="form-select" name="category_id">
+          <option value="">All categories</option>
+          {% for c in categories %}
+            <option value="{{ c.id }}" {% if category_id|string == c.id|string %}selected{% endif %}>
+              {{ c.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-4 col-md-2">
+        <button type="submit" class="btn btn-primary w-100">
+          Search
+        </button>
+      </div>
     </div>
-    <div class="col-8 col-sm-3">
-      <select class="form-select" name="category_id">
-        <option value="">All categories</option>
-        {% for c in categories %}
-          <option value="{{ c.id }}" {{ 'selected' if category_id|int == c.id }}>{{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="col-4 col-sm-2">
-      <button class="btn btn-primary w-100"><i class="bi bi-search"></i></button>
-    </div>
-  </div>
-</form>
+  </form>
 
+  <!-- Quick Category Pills -->
+  <div class="mt-3 pt-2 border-top d-flex flex-wrap gap-2 align-items-center">
+    <span class="small text-muted me-1 fw-semibold"><i class="bi bi-funnel me-1"></i>Quick Topics:</span>
+    <a href="{{ url_for('kb_list', q=q if q else None) }}"
+       class="badge rounded-pill text-decoration-none py-2 px-3 {{ 'bg-primary text-white' if not category_id else 'bg-light text-dark border' }}">
+      All Topics
+    </a>
+    {% for c in categories %}
+    <a href="{{ url_for('kb_list', category_id=c.id, q=q if q else None) }}"
+       class="badge rounded-pill text-decoration-none py-2 px-3 {{ 'bg-primary text-white' if category_id|string == c.id|string else 'bg-light text-dark border' }}">
+      {% if 'Internet' in c.name or 'Computer' in c.name %}
+        <i class="bi bi-wifi me-1"></i>
+      {% elif 'Examination' in c.name %}
+        <i class="bi bi-mortarboard me-1"></i>
+      {% elif 'Infrastructure' in c.name %}
+        <i class="bi bi-tools me-1"></i>
+      {% elif 'Cleanliness' in c.name %}
+        <i class="bi bi-stars me-1"></i>
+      {% elif 'Hostel' in c.name %}
+        <i class="bi bi-house-door me-1"></i>
+      {% elif 'Library' in c.name %}
+        <i class="bi bi-journal-bookmark me-1"></i>
+      {% endif %}
+      {{ c.name }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Active Filter Status -->
+{% if q or category_id %}
+<div class="d-flex align-items-center justify-content-between mb-3 px-1">
+  <div class="small text-muted">
+    Showing <strong>{{ articles|length }}</strong> {{ 'result' if articles|length == 1 else 'results' }}
+    {% if q %}for "<strong>{{ q }}</strong>"{% endif %}
+    {% if category_id %}
+      in <strong>{% for c in categories if c.id|string == category_id|string %}{{ c.name }}{% endfor %}</strong>
+    {% endif %}
+  </div>
+  <a href="{{ url_for('kb_list') }}" class="small text-decoration-none text-danger fw-semibold">
+    <i class="bi bi-x-circle me-1"></i>Clear filters
+  </a>
+</div>
+{% endif %}
+
+<!-- Articles Grid -->
 {% if articles %}
   <div class="row g-3">
     {% for a in articles %}
     <div class="col-12 col-md-6">
       <a href="{{ url_for('kb_article', article_id=a.id) }}"
-         class="text-decoration-none">
-        <div class="ge-card ge-card-hover p-3 h-100">
-          {% if a.category_name %}
-            <div class="ge-eyebrow mb-1">{{ a.category_name }}</div>
-          {% endif %}
-          <div class="fw-semibold ge-wrap mb-1">{{ a.title }}</div>
-          <div class="small text-muted ge-wrap">
-            {{ a.body[:120] }}{% if a.body|length > 120 %}…{% endif %}
+         class="text-decoration-none text-dark d-block h-100">
+        <div class="ge-card ge-card-hover p-3 p-md-4 h-100 d-flex flex-column border-0 shadow-sm transition-all" style="border-radius: 10px;">
+          
+          <!-- Category & Read Time -->
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            {% if a.category_name %}
+              <span class="badge bg-light text-primary border border-primary-subtle fw-medium px-2 py-1 small">
+                {% if 'Internet' in a.category_name %}<i class="bi bi-wifi me-1"></i>
+                {% elif 'Examination' in a.category_name %}<i class="bi bi-mortarboard me-1"></i>
+                {% elif 'Infrastructure' in a.category_name %}<i class="bi bi-tools me-1"></i>
+                {% elif 'Cleanliness' in a.category_name %}<i class="bi bi-stars me-1"></i>
+                {% elif 'Hostel' in a.category_name %}<i class="bi bi-house-door me-1"></i>
+                {% elif 'Library' in a.category_name %}<i class="bi bi-journal-bookmark me-1"></i>
+                {% endif %}
+                {{ a.category_name }}
+              </span>
+            {% else %}
+              <span class="badge bg-light text-secondary border fw-medium px-2 py-1 small">
+                <i class="bi bi-info-circle me-1"></i> General Campus Guide
+              </span>
+            {% endif %}
+            
+            <span class="small text-muted">
+              <i class="bi bi-clock me-1"></i>~2 min read
+            </span>
           </div>
-          <div class="small text-muted mt-2">
-            <i class="bi bi-eye"></i> {{ a.views }}
-            &nbsp;
-            <span class="text-success"><i class="bi bi-hand-thumbs-up"></i> {{ a.helpful_yes }}</span>
+
+          <!-- Title -->
+          <h5 class="fw-semibold text-dark mb-2 ge-wrap" style="line-height: 1.35; font-size: 1.05rem;">
+            {{ a.title }}
+          </h5>
+
+          <!-- Body Excerpt -->
+          <p class="small text-muted ge-wrap flex-grow-1 mb-3" style="line-height: 1.55;">
+            {{ a.body[:130] }}{% if a.body|length > 130 %}…{% endif %}
+          </p>
+
+          <!-- Footer Metadata -->
+          <div class="d-flex align-items-center justify-content-between pt-2 border-top mt-auto small text-muted">
+            <div class="d-flex gap-3 align-items-center">
+              <span><i class="bi bi-eye me-1"></i>{{ a.views }} views</span>
+              <span class="text-success"><i class="bi bi-hand-thumbs-up me-1"></i>{{ a.helpful_yes }} helpful</span>
+            </div>
+            <span class="text-primary fw-semibold small">
+              Read guide <i class="bi bi-arrow-right ms-1"></i>
+            </span>
           </div>
+
         </div>
       </a>
     </div>
     {% endfor %}
   </div>
 {% else %}
-  <div class="ge-card p-4">
-    <div class="ge-empty">
-      <i class="bi bi-search"></i>
-      <div class="fw-semibold">No articles found</div>
-      <div class="small">Try a different search, or raise a complaint and the team will help.</div>
-    </div>
-    <div class="text-center pb-3">
-      <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary">
-        <i class="bi bi-plus-circle"></i> Raise a complaint
-      </a>
+  <div class="ge-card p-5 text-center shadow-sm">
+    <div class="ge-empty py-4">
+      <i class="bi bi-search text-muted display-4 mb-3"></i>
+      <h5 class="fw-semibold text-dark">No articles found</h5>
+      <p class="text-muted small mb-4" style="max-width: 440px; margin: 0 auto;">
+        We couldn't find any articles matching your search. Try different keywords, browse all categories, or submit a complaint.
+      </p>
+      <div class="d-flex justify-content-center gap-2">
+        <a href="{{ url_for('kb_list') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Search
+        </a>
+        {% if current_user.is_authenticated and current_user.role == 'student' %}
+        <a href="{{ url_for('raise_complaint') }}" class="btn btn-primary btn-sm">
+          <i class="bi bi-plus-circle me-1"></i> Raise a Complaint
+        </a>
+        {% endif %}
+      </div>
     </div>
   </div>
 {% endif %}

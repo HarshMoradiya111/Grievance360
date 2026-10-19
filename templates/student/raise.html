@@ -16,6 +16,9 @@
     <!-- Active announcements for the chosen category (injected by JS) -->
     <div id="annBox"></div>
 
+    <!-- Suggested help articles panel (injected by JS) -->
+    <div id="kbBox"></div>
+
     <!-- Duplicate suggestions panel (injected by JS) -->
     <div id="dupBox"></div>
 
@@ -115,11 +118,19 @@
       ? 'Expected to be resolved within ' + days + ' day(s).'
       : 'Each category has its own resolution deadline.';
     checkAnnouncements(this.value);
+    checkKbArticles(this.value);
     checkDuplicates();
   });
 
   document.getElementById('subject').addEventListener('input', checkDuplicates);
   document.getElementById('description').addEventListener('input', checkDuplicates);
+
+  // Trigger on initial page load if category is pre-selected
+  var initialCat = document.getElementById('category_id').value;
+  if (initialCat) {
+    checkAnnouncements(initialCat);
+    checkKbArticles(initialCat);
+  }
 
   /* Show active announcements for the chosen category */
   function checkAnnouncements(catId) {
@@ -136,6 +147,32 @@
             escText(a.title) + '</div><div class="ge-notice-body small">' +
             escText(a.body) + '</div></div>';
         });
+        box.innerHTML = html;
+      });
+  }
+
+  /* Show suggested Help Centre articles for this category to deflect complaints */
+  function checkKbArticles(catId) {
+    var box = document.getElementById('kbBox');
+    box.innerHTML = '';
+    if (!catId) return;
+    fetch('/api/kb/suggest?category_id=' + catId)
+      .then(function(r){ return r.json(); })
+      .then(function(data) {
+        if (!data.items || !data.items.length) return;
+        var html = '<div class="ge-card p-3 mb-3 border-0 shadow-sm" style="background:#f8fafc; border-left: 3px solid #3b82f6 !important;">' +
+          '<div class="d-flex justify-content-between align-items-center mb-2">' +
+            '<div class="fw-semibold small text-primary"><i class="bi bi-book-half me-1"></i> Common solutions in this category:</div>' +
+            '<a href="/kb?category_id=' + encodeURIComponent(catId) + '" class="small text-decoration-none fw-medium">View all in Help Centre &rarr;</a>' +
+          '</div>' +
+          '<div class="d-flex flex-column gap-1">';
+        data.items.forEach(function(it) {
+          html += '<div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light">' +
+            '<span class="small text-dark fw-medium text-truncate me-2"><i class="bi bi-file-earmark-text text-muted me-1"></i>' + escText(it.title) + '</span>' +
+            '<a href="' + it.url + '" class="btn btn-sm btn-outline-primary py-0 px-2 flex-shrink-0" style="font-size: .8rem;">Read guide</a>' +
+          '</div>';
+        });
+        html += '</div></div>';
         box.innerHTML = html;
       });
   }

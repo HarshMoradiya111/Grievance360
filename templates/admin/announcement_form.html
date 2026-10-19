@@ -35,7 +35,7 @@
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">Department (optional)</label>
-            {% set cur_dept = (ann.department_id if ann else form.get('department_id',''))|int %}
+            {% set cur_dept = (ann.department_id|string if ann and ann.department_id else form.get('department_id','')) %}
             <select class="form-select" name="department_id">
               <option value="">— All —</option>
               {% for d in departments %}
@@ -45,7 +45,7 @@
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">Category (optional)</label>
-            {% set cur_cat = (ann.category_id if ann else form.get('category_id',''))|int %}
+            {% set cur_cat = (ann.category_id|string if ann and ann.category_id else form.get('category_id','')) %}
             <select class="form-select" name="category_id">
               <option value="">— All —</option>
               {% for c in categories %}
@@ -59,14 +59,16 @@
           <div class="col-12 col-md-6">
             <label class="form-label">Start date/time</label>
             <input type="datetime-local" class="form-control" name="starts_at"
-                   value="{{ (ann.starts_at[:16] if ann else form.get('starts_at','')) }}"
+                   value="{{ (ann.starts_at[:16].replace(' ', 'T') if ann and ann.starts_at else form.get('starts_at', default_starts)) }}"
                    required>
+            <div class="form-text">When this notice becomes visible to campus users.</div>
           </div>
           <div class="col-12 col-md-6">
             <label class="form-label">End date/time</label>
             <input type="datetime-local" class="form-control" name="ends_at"
-                   value="{{ (ann.ends_at[:16] if ann else form.get('ends_at','')) }}"
+                   value="{{ (ann.ends_at[:16].replace(' ', 'T') if ann and ann.ends_at else form.get('ends_at', default_ends)) }}"
                    required>
+            <div class="form-text">When this notice automatically expires.</div>
           </div>
         </div>
 

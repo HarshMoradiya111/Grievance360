@@ -214,52 +214,165 @@
   function handleNotifications(data) {
     renderBell(data);
 
-    if (!data.items || data.items.length === 0) {
-      isInitialFetch = false;
-      return;
+    // 1. Process Complaint Status Notifications
+    if (data.items && data.items.length > 0) {
+      data.items.forEach(function (item, index) {
+        var id = item.id;
+        var sessionKey = "g360_seen_notif_" + id;
+        var hasBeenSeenThisSession = sessionStorage.getItem(sessionKey);
+
+        var shouldPop = false;
+        if (isInitialFetch) {
+          if (!item.is_read && !hasBeenSeenThisSession) {
+            shouldPop = true;
+          }
+        } else {
+          if (!knownIds.has(id) && !hasBeenSeenThisSession) {
+            shouldPop = true;
+          }
+        }
+
+        if (shouldPop) {
+          sessionStorage.setItem(sessionKey, "1");
+          setTimeout(function () {
+            var isNotice = item.type === "announcement" || (item.message && item.message.indexOf("📢") !== -1);
+            showToast({
+              id: item.id,
+              title: isNotice ? "📢 Campus Notice" : (item.ticket_code ? "Ticket " + item.ticket_code : "Complaint Update"),
+              message: item.message,
+              timeAgo: item.time_ago || "Just now",
+              link: item.link || (isNotice ? "/announcements" : null),
+              statusColor: isNotice ? "warning" : (item.status_color || "primary")
+            });
+          }, index * 350);
+        }
+
+        knownIds.add(id);
+      });
     }
 
-    // Determine which notifications need to pop up
-    data.items.forEach(function (item, index) {
-      var id = item.id;
-      var sessionKey = "g360_seen_notif_" + id;
-      var hasBeenSeenThisSession = sessionStorage.getItem(sessionKey);
-
-      // On Initial page load (e.g. user logs in 5 hours later):
-      // Pop up any unread notification that hasn't been toasted in this browser session.
-      // On Subsequent live polls:
-      // Pop up any brand new notification that just arrived.
-      var shouldPop = false;
-
-      if (isInitialFetch) {
-        if (!item.is_read && !hasBeenSeenThisSession) {
-          shouldPop = true;
+    // 2. Process Campus Announcements Live
+    if (data.announcements && data.announcements.length > 0) {
+      data.announcements.forEach(function (ann, i) {
+        var sessionKey = "g360_seen_ann_" + ann.id;
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, "1");
+          setTimeout(function () {
+            showToast({
+              id: ann.id,
+              title: "📢 Campus Announcement",
+              message: ann.title + (ann.body ? ": " + (ann.body.length > 130 ? ann.body.substring(0, 130) + "…" : ann.body) : ""),
+              timeAgo: ann.time_ago || "Just now",
+              link: ann.link || "/announcements",
+              statusColor: "warning"
+            });
+          }, i * 400);
         }
-      } else {
-        if (!knownIds.has(id) && !hasBeenSeenThisSession) {
-          shouldPop = true;
-        }
-      }
+      });
 
-      if (shouldPop) {
-        sessionStorage.setItem(sessionKey, "1");
-        // Stagger popups by 350ms so multiple updates don't overlap awkwardly
-        setTimeout(function () {
-          showToast({
-            id: item.id,
-            title: item.ticket_code ? "Ticket " + item.ticket_code : "Complaint Update",
-            message: item.message,
-            timeAgo: item.time_ago || "Just now",
-            link: item.link,
-            statusColor: item.status_color || "primary"
-          });
-        }, index * 350);
-      }
-
-      knownIds.add(id);
-    });
+      // Synchronize notice board & dashboard live
+      updateLiveNotices(data.announcements);
+    }
 
     isInitialFetch = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Live DOM Synchronization for Announcements / Notice Board
+  // ---------------------------------------------------------------------------
+  function updateLiveNotices(announcements) {
+    if (!announcements || !announcements.length) return;
+
+    // 1. Notice Board Page (/announcements)
+    var annList = document.getElementById("announcementsList");
+    if (annList) {
+      var emptyNoticeCard = document.getElementById("emptyNoticeCard");
+      if (emptyNoticeCard) emptyNoticeCard.remove();
+
+      var existingIds = new Set();
+      annList.querySelectorAll("[data-announcement-id]").forEach(function (el) {
+        existingIds.add(el.getAttribute("data-announcement-id"));
+      });
+
+      announcements.forEach(function (a) {
+        if (!existingIds.has(String(a.id))) {
+          var div = document.createElement("div");
+          div.className = "ge-notice p-3 p-md-4 border rounded shadow-sm bg-white";
+          div.setAttribute("data-announcement-id", a.id);
+          div.style.borderLeft = "4px solid #f59e0b !important";
+          div.style.borderRadius = "9px";
+          div.style.transition = "all .4s ease";
+
+          var audBadge = "";
+          if (a.audience_role && a.audience_role !== "all") {
+            audBadge = '<span class="badge bg-info-subtle text-info border border-info-subtle small">For ' + escapeHtml(a.audience_role.charAt(0).toUpperCase() + a.audience_role.slice(1)) + 's</span>';
+          } else {
+            audBadge = '<span class="badge bg-light text-muted border small">All Campus</span>';
+          }
+
+          var catBadge = a.category_name ? '<span class="badge bg-light text-secondary border"><i class="bi bi-tag me-1"></i>' + escapeHtml(a.category_name) + '</span>' : '';
+          var validText = a.pretty_ends ? '<span><i class="bi bi-calendar-check me-1"></i>Active until: <strong>' + escapeHtml(a.pretty_ends) + '</strong></span>' : '';
+
+          div.innerHTML =
+            '<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">' +
+              '<h5 class="ge-notice-title fs-6 fw-bold text-dark mb-0 ge-wrap"><span class="badge bg-danger me-2">NEW</span>' + escapeHtml(a.title) + '</h5>' +
+              '<div class="d-flex gap-1 flex-shrink-0">' + audBadge + '</div>' +
+            '</div>' +
+            '<div class="ge-notice-body text-secondary mb-3 ge-wrap" style="font-size: .94rem; line-height: 1.6; white-space: pre-wrap;">' + escapeHtml(a.body) + '</div>' +
+            '<div class="d-flex flex-wrap gap-3 align-items-center small text-muted border-top pt-2">' +
+              catBadge + validText +
+            '</div>';
+
+          annList.insertBefore(div, annList.firstChild);
+        }
+      });
+    }
+
+    // 2. Dashboard Notice Section (#dashboardNotices)
+    var dashBox = document.getElementById("dashboardNotices");
+    if (dashBox) {
+      var dashList = document.getElementById("dashboardNoticesList");
+      if (!dashList) {
+        dashBox.innerHTML =
+          '<div class="ge-card p-3 p-md-4 border-0 shadow-sm mb-3" style="border-left: 4px solid #f59e0b !important; background: #fffdf9; border-radius: 9px;">' +
+            '<div class="d-flex justify-content-between align-items-center mb-2">' +
+              '<h6 class="fw-bold mb-0 text-dark"><i class="bi bi-megaphone-fill text-warning me-2"></i>Campus Notice Board</h6>' +
+              '<a href="/announcements" class="small fw-semibold text-decoration-none">View all notices &rarr;</a>' +
+            '</div>' +
+            '<div id="dashboardNoticesList" class="d-flex flex-column gap-2 mt-2"></div>' +
+          '</div>';
+        dashList = document.getElementById("dashboardNoticesList");
+      }
+
+      var existingDashIds = new Set();
+      dashList.querySelectorAll("[data-notice-id]").forEach(function (el) {
+        existingDashIds.add(el.getAttribute("data-notice-id"));
+      });
+
+      announcements.forEach(function (a) {
+        if (!existingDashIds.has(String(a.id))) {
+          var itemEl = document.createElement("div");
+          itemEl.className = "p-2 p-md-3 rounded bg-white border border-warning-subtle shadow-xs";
+          itemEl.setAttribute("data-notice-id", a.id);
+
+          var catHtml = a.category_name ? '<span class="badge bg-light text-secondary border small">' + escapeHtml(a.category_name) + '</span>' : '';
+          var timeHtml = a.pretty_ends ? '<span><i class="bi bi-clock me-1"></i>Active until ' + escapeHtml(a.pretty_ends) + '</span>' : '';
+
+          itemEl.innerHTML =
+            '<div class="d-flex justify-content-between align-items-start gap-2">' +
+              '<span class="fw-semibold small text-dark ge-wrap"><span class="badge bg-danger me-1">NEW</span>' + escapeHtml(a.title) + '</span>' +
+              catHtml +
+            '</div>' +
+            '<p class="small text-muted mb-1 mt-1 ge-wrap" style="line-height: 1.5;">' + escapeHtml(a.body.length > 150 ? a.body.substring(0, 150) + '…' : a.body) + '</p>' +
+            '<div class="small text-muted d-flex justify-content-between align-items-center pt-1" style="font-size: .75rem;">' +
+              timeHtml +
+              '<a href="/announcements" class="fw-semibold text-primary text-decoration-none">Read full notice &rarr;</a>' +
+            '</div>';
+
+          dashList.insertBefore(itemEl, dashList.firstChild);
+        }
+      });
+    }
   }
 
   function pollAuth() {
@@ -276,7 +389,6 @@
   // Unauthenticated / Guest User Notification Engine
   // ---------------------------------------------------------------------------
   function pollGuest() {
-    // Check if guest user has a tracked ticket saved in localStorage
     var trackedTicket = localStorage.getItem("g360_tracked_ticket") || "";
     var query = trackedTicket ? "?ticket_code=" + encodeURIComponent(trackedTicket) : "";
 
@@ -293,7 +405,6 @@
             var prevStatus = localStorage.getItem(cacheKey);
 
             if (prevStatus && prevStatus !== up.status) {
-              // Status was changed by admin live!
               localStorage.setItem(cacheKey, up.status);
               showToast({
                 title: "Ticket " + up.ticket_code + " Updated",
@@ -304,7 +415,6 @@
               });
             } else if (!prevStatus) {
               localStorage.setItem(cacheKey, up.status);
-              // On first check, if updated recently, toast
               var sessionKey = "g360_seen_guest_" + up.ticket_code;
               if (!sessionStorage.getItem(sessionKey)) {
                 sessionStorage.setItem(sessionKey, "1");
@@ -329,8 +439,8 @@
               setTimeout(function () {
                 showToast({
                   id: ann.id,
-                  title: "Campus Notice",
-                  message: ann.title + (ann.message ? ": " + ann.message : ""),
+                  title: "📢 Campus Notice",
+                  message: ann.title + (ann.body ? ": " + (ann.body.length > 130 ? ann.body.substring(0, 130) + "…" : ann.body) : ""),
                   timeAgo: ann.time_ago || "Just now",
                   link: ann.link || "/announcements",
                   statusColor: "warning"
@@ -338,6 +448,9 @@
               }, i * 400);
             }
           });
+
+          // Update live notices for guests if on notice board
+          updateLiveNotices(data.announcements);
         }
       })
       .catch(function () {});

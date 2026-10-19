@@ -2,34 +2,68 @@
 {% block title %}Notices &middot; Grievance360{% endblock %}
 {% block content %}
 
-<div class="ge-page-head">
-  <h4><i class="bi bi-megaphone me-1"></i> Notice board</h4>
-  <p class="ge-page-sub">Known issues and scheduled maintenance from the support team.</p>
+<div class="ge-page-head d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div>
+    <h4 class="mb-1"><i class="bi bi-megaphone-fill text-warning me-2"></i>Campus Notice Board</h4>
+    <p class="ge-page-sub mb-0">Live administrative advisories, maintenance schedules, and important student announcements.</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 small">
+      <i class="bi bi-broadcast me-1"></i> Live sync active
+    </span>
+    {% if current_user.role == 'admin' %}
+    <a href="{{ url_for('admin_announcement_save') }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-circle me-1"></i> Post Notice
+    </a>
+    {% endif %}
+  </div>
 </div>
 
+<div id="announcementsList" class="d-flex flex-column gap-3">
 {% if announcements %}
   {% for a in announcements %}
-  <div class="ge-notice mb-3">
-    <div class="ge-notice-title mb-1">{{ a.title }}</div>
-    <div class="ge-notice-body mb-2">{{ a.body }}</div>
-    <div class="d-flex flex-wrap gap-2 align-items-center">
+  <div class="ge-notice p-3 p-md-4 border rounded shadow-sm bg-white" data-announcement-id="{{ a.id }}" style="border-left: 4px solid var(--ge-accent) !important; border-radius: 9px;">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+      <h5 class="ge-notice-title fs-6 fw-bold text-dark mb-0 ge-wrap">{{ a.title }}</h5>
+      <div class="d-flex gap-1 flex-shrink-0">
+        {% if a.audience_role and a.audience_role != 'all' %}
+          <span class="badge bg-info-subtle text-info border border-info-subtle small">For {{ a.audience_role|title }}s</span>
+        {% else %}
+          <span class="badge bg-light text-muted border small">All Campus</span>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="ge-notice-body text-secondary mb-3 ge-wrap" style="font-size: .94rem; line-height: 1.6; white-space: pre-wrap;">{{ a.body }}</div>
+    
+    <div class="d-flex flex-wrap gap-3 align-items-center small text-muted border-top pt-2">
       {% if a.category_name %}
-        <span class="badge bg-secondary">{{ a.category_name }}</span>
+        <span class="badge bg-light text-secondary border">
+          <i class="bi bi-tag me-1"></i>{{ a.category_name }}
+        </span>
       {% endif %}
-      <span class="text-muted small">
-        <i class="bi bi-clock"></i> Until {{ pretty_date(a.ends_at) }}
+      <span>
+        <i class="bi bi-calendar-check me-1"></i>Active until: <strong>{{ pretty_date(a.ends_at) }}</strong>
       </span>
+      {% if a.starts_at %}
+      <span class="ms-auto text-muted small">
+        <i class="bi bi-clock me-1"></i>Posted {{ time_ago(a.starts_at) }}
+      </span>
+      {% endif %}
     </div>
   </div>
   {% endfor %}
 {% else %}
-  <div class="ge-card p-4">
-    <div class="ge-empty">
-      <i class="bi bi-check-circle"></i>
-      <div class="fw-semibold">No active notices</div>
-      <div class="small">Nothing outstanding at the moment.</div>
+  <div class="ge-card p-4 text-center shadow-sm" id="emptyNoticeCard" style="border-radius: 9px;">
+    <div class="ge-empty py-3">
+      <i class="bi bi-check-circle text-success fs-1 mb-2 d-block"></i>
+      <div class="fw-semibold text-dark fs-5">No active notices</div>
+      <div class="small text-muted" style="max-width: 400px; margin: 0 auto;">
+        There are no campus-wide notices or maintenance shutdowns active at the moment. New announcements from administration will appear here live.
+      </div>
     </div>
   </div>
 {% endif %}
+</div>
 
 {% endblock %}

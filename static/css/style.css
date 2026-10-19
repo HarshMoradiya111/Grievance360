@@ -579,3 +579,20 @@ textarea.form-control { min-height: 110px; line-height: 1.5; }
   50% { transform: scale(1.22); }
   100% { transform: scale(1); }
 }
+
+/* ------------------------------------------------------------- branding --- */
+.ge-logo,
+.navbar-brand img,
+footer img[src*="Grievance360.png"],
+img[src*="Grievance360.png"] {
+  border-radius: 50% !important;
+  object-fit: cover;
+  aspect-ratio: 1 / 1;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.ge-logo-shadow {
+  box-shadow: 0 4px 14px rgba(0, 51, 153, 0.18);
+  border: 1px solid rgba(0, 102, 204, 0.15);
+}

@@ -46,4 +46,8 @@ users = [
 ]
 db.users.insert_many(users)
 
+# 4. Knowledge Base Articles
+from seed_kb_articles import seed_articles
+seed_articles()
+
 print("MongoDB Seeded successfully!")

@@ -35,6 +35,41 @@
 </div>
 {% endif %}
 
+<!-- Live Campus Notices Section -->
+<div id="dashboardNotices" class="mb-3">
+  {% if active_notices %}
+    <div class="ge-card p-3 p-md-4 border-0 shadow-sm" style="border-left: 4px solid #f59e0b !important; background: #fffdf9; border-radius: 9px;">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="fw-bold mb-0 text-dark">
+          <i class="bi bi-megaphone-fill text-warning me-2"></i>Campus Notice Board
+        </h6>
+        <a href="{{ url_for('announcements') }}" class="small fw-semibold text-decoration-none">
+          View all notices &rarr;
+        </a>
+      </div>
+      <div id="dashboardNoticesList" class="d-flex flex-column gap-2 mt-2">
+        {% for n in active_notices %}
+        <div class="p-2 p-md-3 rounded bg-white border border-warning-subtle shadow-xs" data-notice-id="{{ n.id }}">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <span class="fw-semibold small text-dark ge-wrap">{{ n.title }}</span>
+            {% if n.category_name %}
+              <span class="badge bg-light text-secondary border small">{{ n.category_name }}</span>
+            {% endif %}
+          </div>
+          <p class="small text-muted mb-1 mt-1 ge-wrap" style="line-height: 1.5;">
+            {{ n.body[:150] }}{% if n.body|length > 150 %}…{% endif %}
+          </p>
+          <div class="small text-muted d-flex justify-content-between align-items-center pt-1" style="font-size: .75rem;">
+            <span><i class="bi bi-clock me-1"></i>Active until {{ pretty_date(n.ends_at) }}</span>
+            <a href="{{ url_for('announcements') }}" class="fw-semibold text-primary text-decoration-none">Read full notice &rarr;</a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+
 <!-- Stat tiles: 2 per row on a phone, 4 across from md up -->
 <div class="row g-2 g-md-3 mb-4" data-live-page="student">
   <div class="col-6 col-md-3">{{ stat_tile(counts.total, 'Total', live_key='total') }}</div>

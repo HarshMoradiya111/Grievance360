@@ -232,13 +232,22 @@ def index():
     if current_user.is_authenticated:
         return redirect(url_for("home_for_role"))
 
-    db_conn = db.get_db()
-    stats = {
-        "total": db_conn.complaints.count_documents({}),
-        "resolved": db_conn.complaints.count_documents({"status": {"$in": ["Resolved", "Closed"]}}),
-        "categories": db_conn.categories.count_documents({}),
-        "departments": db_conn.departments.count_documents({}),
-    }
+    try:
+        db_conn = db.get_db()
+        stats = {
+            "total": db_conn.complaints.count_documents({}),
+            "resolved": db_conn.complaints.count_documents({"status": {"$in": ["Resolved", "Closed"]}}),
+            "categories": db_conn.categories.count_documents({}),
+            "departments": db_conn.departments.count_documents({}),
+        }
+    except Exception as exc:
+        app.logger.error("Failed to query stats for index page: %s", exc, exc_info=True)
+        stats = {
+            "total": 0,
+            "resolved": 0,
+            "categories": 0,
+            "departments": 0,
+        }
     return render_template("index.html", stats=stats)
 
 
@@ -1498,6 +1507,7 @@ def error_413(error):
 
 @app.errorhandler(500)
 def error_500(error):
+    app.logger.error("500 Internal Server Error: %s", error, exc_info=True)
     return render_template("error.html", code=500,
                            message="Something went wrong on our side."), 500
 

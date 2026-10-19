@@ -26,7 +26,10 @@ app.config["SECRET_KEY"] = config.SECRET_KEY
 app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_CONTENT_LENGTH
 
-os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+try:
+    os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+except (OSError, PermissionError):
+    pass
 
 db.init_app(app)
 
@@ -2738,7 +2741,7 @@ def profile():
         if len(name) < 2:
             errors.append("Name must be at least 2 characters.")
 
-        photo_name = user.get("photo")
+        photo_name = user.get("photo") if user else None
         file = request.files.get("photo")
         if file and file.filename:
             saved, err = helpers.save_upload(file)
@@ -2755,21 +2758,53 @@ def profile():
                                    depts=CHARUSAT_STUDENT_DEPTS,
                                    semesters=CHARUSAT_SEMESTERS)
 
-        db_conn.users.update_one(
-            {"_id": ObjectId(current_user.id)},
-            {"$set": {
-                "name": name, "phone": phone, "program": program, 
-                "enrollment_no": enrollment_no, "photo": photo_name,
-                "student_department": student_department, "semester": semester
-            }}
-        )
-        flash("Profile updated successfully.", "success")
+        try:
+            db_conn.users.update_one(
+                {"_id": ObjectId(current_user.id)},
+                {"$set": {
+                    "name": name, "phone": phone, "program": program, 
+                    "enrollment_no": enrollment_no, "photo": photo_name,
+                    "student_department": student_department, "semester": semester
+                }}
+            )
+            flash("Profile updated successfully.", "success")
+        except Exception as exc:
+            app.logger.error("Failed to update profile for %s: %s", current_user.id, exc, exc_info=True)
+            flash("An error occurred while saving your profile. Please try again.", "danger")
         return redirect(url_for("profile"))
 
     return render_template("student/profile.html", user=user,
                            programs=CHARUSAT_PROGRAMS,
                            depts=CHARUSAT_STUDENT_DEPTS,
                            semesters=CHARUSAT_SEMESTERS)
+
+
+@app.route("/static/uploads/<path:filename>")
+def serve_upload(filename):
+    """Serve uploaded photos and attachments from local disk, /tmp, or MongoDB GridFS."""
+    import tempfile
+    for target_dir in [config.UPLOAD_FOLDER, os.path.join(tempfile.gettempdir(), "grievance360_uploads")]:
+        local_path = os.path.join(target_dir, filename)
+        if os.path.isfile(local_path):
+            return send_file(local_path)
+
+    if config.DB_ENGINE == "mongodb":
+        try:
+            import gridfs
+            fs = gridfs.GridFS(db.get_db())
+            grid_out = fs.find_one({"filename": filename})
+            if grid_out:
+                meta = getattr(grid_out, "metadata", {}) or {}
+                content_type = meta.get("content_type") or "application/octet-stream"
+                return send_file(
+                    io.BytesIO(grid_out.read()),
+                    mimetype=content_type,
+                    download_name=filename
+                )
+        except Exception as exc:
+            app.logger.warning("Could not fetch upload '%s' from GridFS: %s", filename, exc)
+
+    abort(404)
 
 
 if __name__ == "__main__":

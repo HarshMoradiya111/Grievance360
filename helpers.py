@@ -173,7 +173,7 @@ def allowed_file(filename):
 
 def save_upload(file_storage):
     """Validate and save a file. Returns (filename, error) — one is None."""
-    if file_storage is None or not file_storage.filename:
+    if file_storage is None or not getattr(file_storage, "filename", None):
         return None, None  # no file sent -- that is fine, attachments optional
 
     if not allowed_file(file_storage.filename):
@@ -183,8 +183,31 @@ def save_upload(file_storage):
     safe_name = secure_filename(file_storage.filename)
     unique_name = "%s_%s" % (secrets.token_hex(6), safe_name)
 
-    os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
-    file_storage.save(os.path.join(config.UPLOAD_FOLDER, unique_name))
+    content_type = getattr(file_storage, "content_type", None) or "application/octet-stream"
+    file_bytes = file_storage.read()
+
+    # 1. Store in MongoDB GridFS when using MongoDB (preserves files permanently across Vercel lambdas)
+    if config.DB_ENGINE == "mongodb":
+        try:
+            import gridfs
+            import db
+            fs = gridfs.GridFS(db.get_db())
+            fs.put(file_bytes, filename=unique_name, metadata={"content_type": content_type})
+        except Exception:
+            pass
+
+    # 2. Write to local UPLOAD_FOLDER or /tmp cache if writable
+    import tempfile
+    target_dirs = [config.UPLOAD_FOLDER, os.path.join(tempfile.gettempdir(), "grievance360_uploads")]
+    for target_dir in target_dirs:
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            with open(os.path.join(target_dir, unique_name), "wb") as f:
+                f.write(file_bytes)
+            break
+        except (OSError, PermissionError):
+            continue
+
     return unique_name, None
 
 

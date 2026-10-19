@@ -57,13 +57,24 @@ def _send(to_addr, subject, html_body):
     msg["To"]      = to_addr
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
+    # Try SMTPS (port 465 SSL) first (optimal for cloud/serverless environments)
     try:
-        with smtplib.SMTP(config.MAIL_SMTP, config.MAIL_PORT, timeout=10) as s:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=7) as s:
+            s.login(config.MAIL_USER, config.MAIL_PASSWORD)
+            s.sendmail(config.MAIL_USER, [to_addr], msg.as_string())
+        log.info("Mail sent via SMTPS (465) to %s — %s", to_addr, subject)
+        return
+    except Exception as exc_ssl:
+        log.warning("SMTPS (465) failed to %s: %s; falling back to SMTP...", to_addr, exc_ssl)
+
+    # Fallback to standard SMTP (port 587 STARTTLS)
+    try:
+        with smtplib.SMTP(config.MAIL_SMTP, config.MAIL_PORT, timeout=7) as s:
             s.ehlo()
             s.starttls()
             s.login(config.MAIL_USER, config.MAIL_PASSWORD)
             s.sendmail(config.MAIL_USER, [to_addr], msg.as_string())
-        log.info("Mail sent to %s — %s", to_addr, subject)
+        log.info("Mail sent via SMTP (%s) to %s — %s", config.MAIL_PORT, to_addr, subject)
     except Exception as exc:
         log.warning("Mail failed to %s: %s", to_addr, exc)
 

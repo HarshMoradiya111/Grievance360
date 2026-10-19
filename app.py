@@ -318,23 +318,32 @@ def login():
         return redirect(url_for("home_for_role"))
 
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        login_input = request.form.get("email", "").strip()
         password = request.form.get("password", "")
 
         db_conn = db.get_db()
-        row = db_conn.users.find_one({"email": email})
+        # Accept email, username ('admin'), or enrollment number
+        query_conditions = [{"email": login_input.lower()}]
+        if login_input.lower() == "admin":
+            query_conditions.append({"role": "admin"})
+            query_conditions.append({"email": "admin@grievance360.edu"})
+        else:
+            query_conditions.append({"enrollment_no": login_input})
+            query_conditions.append({"enrollment_no": login_input.upper()})
+
+        row = db_conn.users.find_one({"$or": query_conditions})
         if row and check_password_hash(row["password_hash"], password):
             if not row.get("is_active"):
                 flash("This account has been deactivated.", "danger")
-                return render_template("login.html", email=email)
+                return render_template("login.html", email=login_input)
             row["id"] = str(row["_id"])
             login_user(User(row))
             flash("Welcome back, %s." % row["name"].split(" ")[0], "success")
             return redirect(url_for("home_for_role"))
 
-        # Deliberately vague: never reveal whether the email exists.
-        flash("Incorrect email or password.", "danger")
-        return render_template("login.html", email=email)
+        # Deliberately vague: never reveal whether the account exists.
+        flash("Incorrect email, username, or password.", "danger")
+        return render_template("login.html", email=login_input)
 
     return render_template("login.html", email="")
 
@@ -348,21 +357,30 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# Password reset (roadmap Step 17).
-# There is no SMTP server in a college lab, so instead of emailing the link we
-# show it on screen. The token logic is identical to a real email flow -- only
-# the delivery differs.
+# Password reset
+# Sends an email via SMTP/Resend AND displays the link on screen so users
+# in environments without direct mail server access can always reset their password.
 # ---------------------------------------------------------------------------
 @app.route("/forgot", methods=["GET", "POST"])
 def forgot_password():
     reset_link = None
 
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        login_input = request.form.get("email", "").strip()
         db_conn = db.get_db()
-        row = db_conn.users.find_one({"email": email})
+
+        query_conditions = [{"email": login_input.lower()}]
+        if login_input.lower() == "admin":
+            query_conditions.append({"role": "admin"})
+            query_conditions.append({"email": "admin@grievance360.edu"})
+        else:
+            query_conditions.append({"enrollment_no": login_input})
+            query_conditions.append({"enrollment_no": login_input.upper()})
+
+        row = db_conn.users.find_one({"$or": query_conditions})
 
         if row:
+            target_email = row.get("email")
             token = helpers.make_reset_token()
             expires = (datetime.now() + timedelta(hours=1)).strftime(
                 helpers.DT_FORMAT)
@@ -372,11 +390,14 @@ def forgot_password():
             )
             reset_path = url_for("reset_password", token=token)
             reset_link = config.PORTAL_URL.rstrip("/") + reset_path
-            mail.notify_password_reset(email, reset_link)
+            try:
+                mail.notify_password_reset(target_email, reset_link)
+            except Exception as exc:
+                app.logger.warning("Could not dispatch password reset email to %s: %s", target_email, exc)
 
-        # Same message either way, so nobody can probe for valid emails.
-        flash("If that email is registered, a password reset link has been sent to it.",
+        flash("If that account is registered, a password reset link has been sent to your email and generated below.",
               "info")
+        return render_template("forgot.html", reset_link=reset_link)
 
     return render_template("forgot.html", reset_link=None)
 

@@ -61,7 +61,7 @@
       try {
         var n = new Notification(title, {
           body: message,
-          icon: "https://www.charusat.ac.in/images/logo.png"
+          icon: "/logo/Grievance360.png"
         });
         if (link) {
           n.onclick = function () {
@@ -110,8 +110,8 @@
 
     var html =
       '<div class="toast-header ge-toast-header d-flex align-items-center">' +
-        '<i class="bi ' + iconClass + ' me-2 fs-6"></i>' +
-        '<strong class="me-auto text-truncate" style="max-width:180px;">' + escapeHtml(title) + '</strong>' +
+        '<img src="/logo/Grievance360.png" alt="Grievance360" width="20" height="20" class="me-2 rounded-circle">' +
+        '<strong class="me-auto text-truncate" style="max-width:170px;">' + escapeHtml(title) + '</strong>' +
         '<span class="ge-toast-time me-2"><i class="bi bi-clock"></i> ' + escapeHtml(timeAgo) + '</span>' +
         '<button type="button" class="btn-close btn-close-sm" data-bs-dismiss="toast" aria-label="Close"></button>' +
       '</div>' +

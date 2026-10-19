@@ -3008,6 +3008,16 @@ def serve_upload(filename):
     abort(404)
 
 
+@app.route("/logo/<path:filename>")
+def serve_logo(filename):
+    """Serve website branding assets from the logo folder."""
+    for target_dir in [os.path.join(app.root_path, "logo"), os.path.join(app.root_path, "static", "logo")]:
+        local_path = os.path.join(target_dir, filename)
+        if os.path.isfile(local_path):
+            return send_file(local_path)
+    abort(404)
+
+
 if __name__ == "__main__":
     os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
     import scheduler

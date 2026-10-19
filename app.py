@@ -98,6 +98,7 @@ def inject_globals():
     return {
         "status_color": helpers.status_color,
         "pretty_date": helpers.pretty_date,
+        "time_ago": helpers.time_ago,
         "priority_label": helpers.priority_label,
         "is_breached": helpers.is_breached,
         "days_left": helpers.days_left,
@@ -105,6 +106,11 @@ def inject_globals():
         "current_year": datetime.now().year,
         "now": now,
     }
+
+
+@app.template_filter("time_ago")
+def filter_time_ago(val):
+    return helpers.time_ago(val)
 
 
 # ===========================================================================
@@ -122,14 +128,20 @@ def log_status(complaint_id, old_status, new_status, remark, changed_by):
         "created_at": helpers.now_str()
     })
 
-def notify(user_id, message, link=None, complaint_id=None):
+def notify(user_id, message, link=None, complaint_id=None, ticket_code=None, status=None):
     """Drop a notification for a user. Safe to call with user_id=None."""
     if not user_id:
         return
+    from bson.objectid import ObjectId
     db_conn = db.get_db()
+    u_oid = ObjectId(user_id) if isinstance(user_id, str) and ObjectId.is_valid(user_id) else user_id
+    c_oid = ObjectId(complaint_id) if isinstance(complaint_id, str) and ObjectId.is_valid(complaint_id) else complaint_id
     db_conn.notifications.insert_one({
-        "user_id": user_id,
-        "complaint_id": complaint_id,
+        "user_id": u_oid,
+        "user_id_str": str(user_id),
+        "complaint_id": c_oid,
+        "ticket_code": ticket_code,
+        "status": status,
         "message": message,
         "link": link,
         "is_read": False,
@@ -931,13 +943,19 @@ def update_status(complaint_id):
         # In-app notification
         link = url_for("track_complaint", ticket_code=complaint["ticket_code"])
         student_oid = ObjectId(complaint["user_id"]) if isinstance(complaint["user_id"], str) and len(complaint["user_id"]) == 24 else complaint["user_id"]
-        db_conn.notifications.insert_one({
-            "user_id": student_oid,
-            "message": "%s is now %s" % (complaint["ticket_code"], new_status),
-            "link": link,
-            "is_read": False,
-            "created_at": now
-        })
+        notif_msg = "%s is now %s%s" % (
+            complaint["ticket_code"],
+            new_status,
+            f" — {remark}" if remark else ""
+        )
+        notify(
+            user_id=student_oid,
+            message=notif_msg,
+            link=link,
+            complaint_id=c_oid,
+            ticket_code=complaint["ticket_code"],
+            status=new_status
+        )
 
         # Email the student about the status change
         student_row = db_conn.users.find_one({"_id": student_oid})
@@ -1446,35 +1464,44 @@ def api_complaint_status(ticket_code):
     if not can_view(complaint):
         return jsonify({"error": "forbidden"}), 403
 
+    from bson.objectid import ObjectId
     db_conn = db.get_db()
     cid = ObjectId(complaint["id"]) if ObjectId.is_valid(complaint.get("id", "")) else complaint.get("_id")
 
     pipeline = [
         {"$match": {"complaint_id": cid}},
-        {"$sort": {"created_at": -1}},
-        {"$limit": 1},
+        {"$sort": {"created_at": 1, "_id": 1}},
         {"$lookup": {"from": "users", "localField": "changed_by", "foreignField": "_id", "as": "u"}}
     ]
-    last_res = list(db_conn.complaint_status_history.aggregate(pipeline))
-    last = last_res[0] if last_res else None
-    changed_by_name = last.get("u", [{}])[0].get("name") if (last and last.get("u")) else None
-    history_count = db_conn.complaint_status_history.count_documents({"complaint_id": cid})
+    history_res = list(db_conn.complaint_status_history.aggregate(pipeline))
+    history_list = []
+    for h in history_res:
+        u_name = h.get("u", [{}])[0].get("name") if h.get("u") else "System"
+        created_val = h.get("created_at")
+        history_list.append({
+            "old_status": h.get("old_status"),
+            "new_status": h.get("new_status"),
+            "status_color": helpers.status_color(h.get("new_status")),
+            "remark": h.get("remark") or "",
+            "changed_by_name": u_name,
+            "created_at": helpers.pretty_date(created_val),
+            "time_ago": helpers.time_ago(created_val),
+        })
+
+    last = history_list[-1] if history_list else None
 
     return jsonify({
         "ticket_code": complaint["ticket_code"],
         "status": complaint["status"],
         "status_color": helpers.status_color(complaint["status"]),
-        "updated_at": helpers.pretty_date(complaint["updated_at"]),
-        "deadline": helpers.pretty_date(complaint["deadline"]),
+        "updated_at": helpers.pretty_date(complaint.get("updated_at")),
+        "updated_time_ago": helpers.time_ago(complaint.get("updated_at")),
+        "deadline": helpers.pretty_date(complaint.get("deadline")),
         "breached": helpers.is_breached(complaint),
         "days_left": helpers.days_left(complaint),
-        "history_count": history_count,
-        "last_update": {
-            "status": last.get("new_status"),
-            "remark": last.get("remark"),
-            "by": changed_by_name,
-            "at": helpers.pretty_date(last.get("created_at")),
-        } if last else None,
+        "history_count": len(history_list),
+        "history": history_list,
+        "last_update": last,
     })
 
 
@@ -1483,18 +1510,36 @@ def api_complaint_status(ticket_code):
 def api_notifications():
     from bson.objectid import ObjectId
     db_conn = db.get_db()
-    rows = list(db_conn.notifications.find({"user_id": ObjectId(current_user.id)}).sort("created_at", -1).limit(10))
-    unread = db_conn.notifications.count_documents({"user_id": ObjectId(current_user.id), "is_read": False})
+    u_id_str = str(current_user.id)
+    u_id_obj = ObjectId(u_id_str) if ObjectId.is_valid(u_id_str) else None
+
+    or_clauses = [{"user_id": u_id_str}, {"user_id_str": u_id_str}]
+    if u_id_obj:
+        or_clauses.append({"user_id": u_id_obj})
+    query = {"$or": or_clauses}
+
+    rows = list(db_conn.notifications.find(query).sort("created_at", -1).limit(25))
+    unread = db_conn.notifications.count_documents({**query, "is_read": False})
+
+    items = []
+    for row in rows:
+        created_val = row.get("created_at")
+        items.append({
+            "id": str(row["_id"]),
+            "message": row.get("message", ""),
+            "link": row.get("link"),
+            "ticket_code": row.get("ticket_code"),
+            "status": row.get("status"),
+            "status_color": helpers.status_color(row.get("status")) if row.get("status") else "primary",
+            "is_read": bool(row.get("is_read")),
+            "at": helpers.pretty_date(created_val),
+            "time_ago": helpers.time_ago(created_val),
+            "created_at": str(created_val) if created_val else "",
+        })
 
     return jsonify({
         "unread": unread,
-        "items": [{
-            "id": str(row["_id"]),
-            "message": row["message"],
-            "link": row["link"],
-            "is_read": bool(row.get("is_read")),
-            "at": helpers.pretty_date(row["created_at"]),
-        } for row in rows],
+        "items": items,
     })
 
 
@@ -1503,8 +1548,143 @@ def api_notifications():
 def api_mark_notifications_read():
     from bson.objectid import ObjectId
     db_conn = db.get_db()
-    db_conn.notifications.update_many({"user_id": ObjectId(current_user.id)}, {"$set": {"is_read": True}})
+    u_id_str = str(current_user.id)
+    u_id_obj = ObjectId(u_id_str) if ObjectId.is_valid(u_id_str) else None
+    or_clauses = [{"user_id": u_id_str}, {"user_id_str": u_id_str}]
+    if u_id_obj:
+        or_clauses.append({"user_id": u_id_obj})
+    db_conn.notifications.update_many({"$or": or_clauses}, {"$set": {"is_read": True}})
     return jsonify({"ok": True, "unread": 0})
+
+
+@app.route("/api/notifications/<notif_id>/read", methods=["POST"])
+@login_required
+def api_mark_single_notification_read(notif_id):
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    if ObjectId.is_valid(notif_id):
+        db_conn.notifications.update_one({"_id": ObjectId(notif_id)}, {"$set": {"is_read": True}})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/public/notifications")
+def api_public_notifications():
+    """Public notification feed for guest tracking and broadcast updates."""
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    ticket_code = request.args.get("ticket_code", "").strip()
+    tickets_arg = request.args.get("tickets", "").strip()
+    ticket_list = []
+    if ticket_code:
+        ticket_list.append(ticket_code)
+    if tickets_arg:
+        for t in tickets_arg.split(","):
+            t = t.strip()
+            if t and t not in ticket_list:
+                ticket_list.append(t)
+
+    updates = []
+    if ticket_list:
+        complaints = list(db_conn.complaints.find({"ticket_code": {"$in": ticket_list}}))
+        for c in complaints:
+            cid = c.get("_id")
+            last_hist = db_conn.complaint_status_history.find_one(
+                {"complaint_id": cid},
+                sort=[("created_at", -1)]
+            )
+            remark = last_hist.get("remark") if last_hist else ""
+            created_val = c.get("updated_at") or c.get("created_at")
+            updates.append({
+                "ticket_code": c.get("ticket_code"),
+                "status": c.get("status"),
+                "status_color": helpers.status_color(c.get("status")),
+                "remark": remark,
+                "updated_at": helpers.pretty_date(created_val),
+                "time_ago": helpers.time_ago(created_val),
+                "message": "%s is now %s%s" % (
+                    c.get("ticket_code"),
+                    c.get("status"),
+                    f" — {remark}" if remark else ""
+                ),
+                "link": f"/track/{c.get('ticket_code')}",
+            })
+
+    announcements_cursor = db_conn.announcements.find({}).sort("created_at", -1).limit(5)
+    ann_items = []
+    for a in announcements_cursor:
+        c_at = a.get("created_at")
+        ann_items.append({
+            "id": str(a.get("_id")),
+            "title": a.get("title", "Announcement"),
+            "message": a.get("message", ""),
+            "time_ago": helpers.time_ago(c_at),
+            "at": helpers.pretty_date(c_at),
+            "created_at": str(c_at) if c_at else "",
+            "link": url_for("announcements") if "announcements" in app.view_functions else "/announcements",
+        })
+
+    return jsonify({
+        "updates": updates,
+        "announcements": ann_items,
+    })
+
+
+@app.route("/api/public/complaint/<ticket_code>/status")
+def api_public_complaint_status(ticket_code):
+    """Public ticket status and timeline without exposing private student info."""
+    from bson.objectid import ObjectId
+    db_conn = db.get_db()
+    c = db_conn.complaints.find_one({"ticket_code": ticket_code})
+    if not c:
+        return jsonify({"error": "not_found"}), 404
+
+    cid = c.get("_id")
+    history_res = list(db_conn.complaint_status_history.find({"complaint_id": cid}).sort("created_at", 1))
+    history_list = []
+    for h in history_res:
+        created_val = h.get("created_at")
+        history_list.append({
+            "old_status": h.get("old_status"),
+            "new_status": h.get("new_status"),
+            "status_color": helpers.status_color(h.get("new_status")),
+            "remark": h.get("remark") or "",
+            "created_at": helpers.pretty_date(created_val),
+            "time_ago": helpers.time_ago(created_val),
+        })
+
+    last = history_list[-1] if history_list else None
+
+    cat_name = "General"
+    if c.get("category_id"):
+        cat = db_conn.categories.find_one({"_id": c.get("category_id")})
+        if cat:
+            cat_name = cat.get("name", "General")
+
+    return jsonify({
+        "ticket_code": c["ticket_code"],
+        "status": c["status"],
+        "status_color": helpers.status_color(c["status"]),
+        "category_name": cat_name,
+        "subject": c.get("subject", ""),
+        "updated_at": helpers.pretty_date(c.get("updated_at")),
+        "updated_time_ago": helpers.time_ago(c.get("updated_at")),
+        "deadline": helpers.pretty_date(c.get("deadline")),
+        "breached": helpers.is_breached(c),
+        "days_left": helpers.days_left(c),
+        "history_count": len(history_list),
+        "history": history_list,
+        "last_update": last,
+    })
+
+
+@app.route("/track")
+@app.route("/track/<ticket_code>")
+def public_track_complaint(ticket_code=None):
+    if not ticket_code:
+        ticket_code = request.args.get("ticket", "").strip() or request.args.get("code", "").strip()
+    if current_user.is_authenticated and ticket_code:
+        return redirect(url_for("track_complaint", ticket_code=ticket_code))
+    return render_template("track_public.html", ticket_code=ticket_code)
 
 
 # ===========================================================================

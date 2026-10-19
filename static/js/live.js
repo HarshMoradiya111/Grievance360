@@ -11,8 +11,8 @@
 (function () {
   "use strict";
 
-  var POLL_MS   = 20000;   // 20 s between ticks
-  var FAST_MS   = 5000;    // 5 s right after a detected change
+  var POLL_MS   = 6000;    // 6 s between ticks for responsive live stats
+  var FAST_MS   = 3000;    // 3 s right after a detected change
   var timer     = null;
   var liveBar   = document.getElementById("liveBar");
 
@@ -65,11 +65,17 @@
       }
     });
 
-    // If the complaint count changed, reload so the card list matches.
+    // If the complaint count changed, notify user without disrupting their screen
     var total = data["total"] !== undefined ? data["total"] : null;
     if (prevTotal !== null && total !== null && total !== prevTotal) {
-      window.location.reload();
-      return;
+      if (window.Grievance360Notify && window.Grievance360Notify.showToast) {
+        window.Grievance360Notify.showToast({
+          title: "Dashboard Synced",
+          message: "Live grievance metrics updated without reloading.",
+          timeAgo: "Just now",
+          statusColor: "info"
+        });
+      }
     }
     prevTotal = total;
 

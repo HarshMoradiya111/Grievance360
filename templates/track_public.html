@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Track Grievance &middot; Grievance360{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-3">
+  <div class="col-12 col-lg-8">
+
+    <div class="ge-page-head mb-4 text-center">
+      <h3><i class="bi bi-search me-1" style="color:var(--ge-primary)"></i> Track Grievance Status</h3>
+      <p class="text-muted small">
+        Enter your ticket code (e.g., <code>GRV-2026-0001</code>) to track live status and resolution updates.
+      </p>
+    </div>
+
+    <!-- Ticket Search Box -->
+    <div class="ge-card p-3 p-md-4 mb-4">
+      <form id="publicTrackForm" class="d-flex gap-2">
+        <input type="text" id="trackInput" class="form-control form-control-lg fw-semibold"
+               placeholder="e.g. GRV-2026-0001" value="{{ ticket_code or '' }}"
+               style="text-transform: uppercase;" required>
+        <button type="submit" class="btn btn-primary btn-lg px-4 d-flex align-items-center gap-2">
+          <i class="bi bi-search"></i> <span>Track</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Live Status Result Container -->
+    <div id="trackResult" class="{% if not ticket_code %}d-none{% endif %}">
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <span class="ge-ticket" id="resTicketCode">{{ ticket_code or '' }}</span>
+        <span id="statusBadge" class="badge bg-secondary">Checking...</span>
+        <span id="liveDot" class="small text-muted ms-auto">
+          <i class="bi bi-broadcast"></i> live
+        </span>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-lg-7">
+          <div class="ge-card p-3 p-md-4 mb-3">
+            <h5 class="ge-wrap mb-2" id="resSubject">-</h5>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <span class="badge bg-light text-dark border" id="resCategory">Category</span>
+            </div>
+            <hr>
+            <div class="row g-2 small">
+              <div class="col-6">
+                <div class="text-muted">Last Updated</div>
+                <div id="resUpdated">-</div>
+              </div>
+              <div class="col-6">
+                <div class="text-muted">Resolution Due</div>
+                <div id="deadlineText">-</div>
+              </div>
+              <div class="col-12 mt-2" id="slaLine"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-5">
+          <div class="ge-card p-3 p-md-4 mb-3">
+            <h6 class="mb-3"><i class="bi bi-activity"></i> Status timeline</h6>
+            <ul class="ge-timeline" id="timeline">
+              <li class="text-muted small">Loading status history...</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/track.js') }}"
+        data-public-mode="1"
+        data-ticket-code="{{ ticket_code or '' }}"></script>
+<script>
+  (function () {
+    var form = document.getElementById("publicTrackForm");
+    var input = document.getElementById("trackInput");
+    if (form && input) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var code = input.value.trim().toUpperCase();
+        if (code) {
+          window.location.href = "/track/" + encodeURIComponent(code);
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

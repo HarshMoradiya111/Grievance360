@@ -44,6 +44,32 @@ def pretty_date(value):
     return moment.strftime("%d %b %Y, %I:%M %p") if moment else "-"
 
 
+def time_ago(value):
+    """Return human-friendly relative time string like 'Just now', '5 mins ago', '5 hours ago', '2 days ago'."""
+    moment = to_dt(value)
+    if not moment:
+        return ""
+    diff = datetime.now() - moment
+    seconds = int(diff.total_seconds())
+    if seconds < 0:
+        return "Just now"
+    if seconds < 60:
+        return "Just now"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} min{'s' if minutes != 1 else ''} ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = hours // 24
+    if days < 7:
+        return f"{days} day{'s' if days != 1 else ''} ago"
+    weeks = days // 7
+    if weeks < 4:
+        return f"{weeks} week{'s' if weeks != 1 else ''} ago"
+    return pretty_date(moment)
+
+
 def days_between(start, end=None):
     """Whole days from start until end (default: now). Never negative."""
     begin = to_dt(start)

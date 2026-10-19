@@ -493,3 +493,89 @@ textarea.form-control { min-height: 110px; line-height: 1.5; }
   .ge-navbar, .ge-bottomnav, .ge-footer, .alert, .no-print { display: none !important; }
   body { background: #fff; padding-bottom: 0; }
 }
+
+/* ===========================================================================
+   Live In-Window Pop-up Toast Notifications
+   =========================================================================== */
+@keyframes geToastSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(40px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.ge-toast {
+  animation: geToastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  border-radius: 12px !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+  background: #ffffff !important;
+  min-width: 330px;
+  max-width: 420px;
+  overflow: hidden;
+  margin-bottom: 0.85rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ge-toast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2) !important;
+}
+
+.ge-toast-header {
+  background: #f8fafc !important;
+  border-bottom: 1px solid #edf2f7 !important;
+  padding: 0.65rem 0.9rem !important;
+  font-size: 0.84rem;
+}
+
+.ge-toast-body {
+  padding: 0.85rem 0.95rem !important;
+  color: var(--ge-ink);
+  font-size: 0.88rem;
+}
+
+.ge-toast-badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+}
+
+.ge-toast-time {
+  font-size: 0.72rem;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ge-toast-action {
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  color: var(--ge-primary);
+}
+
+.ge-toast-action:hover {
+  text-decoration: underline;
+  color: var(--ge-primary-light);
+}
+
+.ge-pulse-badge {
+  animation: geBadgePulse 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes geBadgePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}

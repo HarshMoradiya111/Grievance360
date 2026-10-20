@@ -7,35 +7,45 @@
 
     <div class="ge-page-head">
       <h4><i class="bi bi-person-circle me-1"></i> My Profile</h4>
-      <p class="ge-page-sub">CHARUSAT student record — keep your details up to date.</p>
+      <p class="ge-page-sub">
+        {% if user.role == 'student' %}
+          CHARUSAT student record — keep your details up to date.
+        {% elif user.role == 'staff' %}
+          Department staff officer account details.
+        {% else %}
+          System administrator profile and governance credentials.
+        {% endif %}
+      </p>
     </div>
 
-    {# Build the missing-fields list in the template (avoids an extra route call) #}
-    {% set missing_fields = [] %}
-    {% if not user.phone %}{% set _ = missing_fields.append('Mobile number') %}{% endif %}
-    {% if not user.enrollment_no %}{% set _ = missing_fields.append('Enrollment number') %}{% endif %}
-    {% if not user.program %}{% set _ = missing_fields.append('Programme') %}{% endif %}
-    {% if not user.student_department %}{% set _ = missing_fields.append('Institute / Department') %}{% endif %}
-    {% if not user.semester %}{% set _ = missing_fields.append('Current semester') %}{% endif %}
+    {# Only check missing student fields and show complaint warning for students #}
+    {% if user.role == 'student' %}
+      {% set missing_fields = [] %}
+      {% if not user.phone %}{% set _ = missing_fields.append('Mobile number') %}{% endif %}
+      {% if not user.enrollment_no %}{% set _ = missing_fields.append('Enrollment number') %}{% endif %}
+      {% if not user.program %}{% set _ = missing_fields.append('Programme') %}{% endif %}
+      {% if not user.student_department %}{% set _ = missing_fields.append('Institute / Department') %}{% endif %}
+      {% if not user.semester %}{% set _ = missing_fields.append('Current semester') %}{% endif %}
 
-    {% if missing_fields %}
-    <div class="alert alert-warning d-flex align-items-start gap-3 mb-3" role="alert">
-      <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
-      <div>
-        <div class="fw-semibold">Profile incomplete — you cannot raise a complaint yet</div>
-        <div class="small mt-1">Please fill in the highlighted fields below:</div>
-        <ul class="small mb-0 mt-1 ps-3">
-          {% for f in missing_fields %}
-            <li>{{ f }}</li>
-          {% endfor %}
-        </ul>
+      {% if missing_fields %}
+      <div class="alert alert-warning d-flex align-items-start gap-3 mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
+        <div>
+          <div class="fw-semibold">Profile incomplete — you cannot raise a complaint yet</div>
+          <div class="small mt-1">Please fill in the highlighted fields below:</div>
+          <ul class="small mb-0 mt-1 ps-3">
+            {% for f in missing_fields %}
+              <li>{{ f }}</li>
+            {% endfor %}
+          </ul>
+        </div>
       </div>
-    </div>
-    {% else %}
-    <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="alert">
-      <i class="bi bi-check-circle-fill flex-shrink-0"></i>
-      <span>Profile complete — you can raise complaints.</span>
-    </div>
+      {% else %}
+      <div class="alert alert-success d-flex align-items-center gap-2 mb-3" role="alert">
+        <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+        <span>Profile complete — you can raise complaints.</span>
+      </div>
+      {% endif %}
     {% endif %}
 
     <div class="row g-3">
@@ -79,6 +89,16 @@
           <hr class="my-3">
 
           <!-- Quick info pills -->
+          {% if user.role == 'admin' %}
+            <div class="small mb-1 text-primary fw-semibold">
+              <i class="bi bi-shield-lock me-1"></i>System Governance
+            </div>
+          {% endif %}
+          {% if user.department_name %}
+            <div class="small mb-1 text-success fw-medium">
+              <i class="bi bi-building me-1"></i>{{ user.department_name }}
+            </div>
+          {% endif %}
           {% if user.enrollment_no %}
             <div class="small mb-1">
               <i class="bi bi-card-text me-1 text-muted"></i>
@@ -137,12 +157,12 @@
               <div class="col-12 col-sm-6">
                 <label class="form-label fw-medium">
                   Mobile number
-                  {% if not user.phone %}<span class="text-danger">*</span>{% endif %}
+                  {% if user.role == 'student' and not user.phone %}<span class="text-danger">*</span>{% endif %}
                 </label>
                 <div class="input-group">
                   <span class="input-group-text">+91</span>
                   <input type="tel"
-                         class="form-control {% if not user.phone %}border-warning{% endif %}"
+                         class="form-control {% if user.role == 'student' and not user.phone %}border-warning{% endif %}"
                          name="phone"
                          value="{{ user.phone or '' }}"
                          placeholder="9876543210" maxlength="10"
@@ -208,7 +228,8 @@
                   {% if not user.semester %}<span class="text-danger">*</span>{% endif %}
                 </label>
                 <select class="form-select {% if not user.semester %}border-warning{% endif %}"
-                        name="semester" id="semesterSelect">
+                        name="semester" id="semesterSelect"
+                        data-saved-semester="{{ user.semester or '' }}">
                   <option value="">— Select programme first —</option>
                 </select>
                 <div class="form-text" id="semHint"></div>
@@ -238,8 +259,13 @@
                 <button type="submit" class="btn btn-primary">
                   <i class="bi bi-check-lg me-1"></i> Save changes
                 </button>
-                <a href="{{ url_for('student_dashboard') }}"
-                   class="btn btn-outline-secondary">Cancel</a>
+                {% if user.role == 'admin' %}
+                  <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+                {% elif user.role == 'staff' %}
+                  <a href="{{ url_for('staff_dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+                {% else %}
+                  <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+                {% endif %}
               </div>
 
             </div>
@@ -253,9 +279,13 @@
           <div class="small">
             <div class="fw-semibold mb-1">Charotar University of Science &amp; Technology</div>
             CHARUSAT Campus, Changa, Anand, Gujarat — 388421<br>
+            {% if user.role == 'student' %}
             For urgent matters visit the <strong>Student Welfare Office, Main Block</strong>
             or email
             <a href="mailto:grievance@charusat.ac.in">grievance@charusat.ac.in</a>
+            {% else %}
+            Grievance360 Institutional Redressal &amp; Automation Platform Governance.
+            {% endif %}
           </div>
         </div>
       </div>
@@ -294,10 +324,11 @@
   var semSel     = document.getElementById("semesterSelect");
   var semHint    = document.getElementById("semHint");
 
-  /* Server-rendered saved values so JS can pre-select them on load */
-  var savedSem  = {{ (user.semester or '')|tojson }};
+  /* Server-rendered saved value via data attribute so HTML/JS parser validates cleanly */
+  var savedSem   = semSel ? (semSel.getAttribute("data-saved-semester") || "") : "";
 
   function rebuildSemesters(prog) {
+    if (!semSel) return;
     semSel.innerHTML = "";
     var count = SEM_COUNT[prog];
 
@@ -322,7 +353,7 @@
     }
   }
 
-  if (programSel) {
+  if (programSel && semSel) {
     programSel.addEventListener("change", function () {
       savedSem = "";          /* user is picking fresh — don't stick old value */
       rebuildSemesters(this.value);

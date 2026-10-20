@@ -3099,7 +3099,12 @@ def profile():
     from bson.objectid import ObjectId
     db_conn = db.get_db()
     user = db_conn.users.find_one({"_id": ObjectId(current_user.id)})
-    if user: user["id"] = str(user["_id"])
+    if user:
+        user["id"] = str(user["_id"])
+        if user.get("department_id"):
+            dept = db_conn.departments.find_one({"_id": user["department_id"]})
+            if dept:
+                user["department_name"] = dept.get("name")
 
     if request.method == "POST":
         name               = request.form.get("name", "").strip()

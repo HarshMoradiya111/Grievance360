@@ -2223,6 +2223,13 @@ def admin_automation_trigger(action):
     elif action == "digest":
         digest = automation.generate_executive_digest(db_conn)
         flash(f"Executive digest generated and dispatched to administrators ({digest['resolution_rate']}% resolution rate).", "success")
+    elif action == "test_email":
+        target = request.form.get("target_email", "").strip() or current_user.email
+        ok, reason = mail.test_mail_connection(target)
+        if ok:
+            flash(f"Live email test SUCCESS: Delivered to {target} ({reason}).", "success")
+        else:
+            flash(f"Live email test FAILED to {target}: {reason}", "danger")
     else:
         flash("Unknown automation action.", "danger")
 

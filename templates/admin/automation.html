@@ -175,6 +175,22 @@
             </button>
           </form>
         </div>
+
+        <hr class="my-3">
+        <form method="POST" action="{{ url_for('admin_automation_trigger', action='test_email') }}" class="row g-2 align-items-center">
+          <div class="col-auto">
+            <label class="form-label small mb-0 fw-semibold text-muted">Test Live Notifications:</label>
+          </div>
+          <div class="col">
+            <input type="email" class="form-control form-control-sm" name="target_email"
+                   placeholder="Enter your email" value="{{ current_user.email }}" required>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-outline-info">
+              <i class="bi bi-send me-1"></i> Send Test Email
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 

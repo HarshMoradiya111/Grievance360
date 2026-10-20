@@ -24,17 +24,27 @@ log = logging.getLogger(__name__)
 # Internal: send one HTML email in a background thread
 # ---------------------------------------------------------------------------
 def _send(to_addr, subject, html_body):
-    """Low-level send. Called from a daemon thread — never call directly."""
+    """Low-level send. Safe for cloud serverless (Vercel) & local runtimes."""
     if not config.MAIL_ENABLED:
-        return
+        log.info("Mail dispatch skipped: MAIL_ENABLED is False")
+        return False, "MAIL_ENABLED is False"
 
-    # Try Resend API if Vercel blocks SMTP
+    if not to_addr or not isinstance(to_addr, str) or "@" not in to_addr:
+        log.warning("Skipping email send: invalid to_addr '%s'", to_addr)
+        return False, f"Invalid recipient: {to_addr}"
+
+    to_addr = to_addr.strip()
+
+    # Try Resend API if configured
     import os
     resend_key = os.environ.get('RESEND_API_KEY')
     if resend_key:
         import urllib.request, json
+        resend_from = config.MAIL_FROM
+        if "@gmail.com" in (config.MAIL_FROM or "").lower():
+            resend_from = "Grievance360 <onboarding@resend.dev>"
         data = {
-            'from': config.MAIL_FROM,
+            'from': resend_from,
             'to': [to_addr],
             'subject': subject,
             'html': html_body
@@ -45,11 +55,40 @@ def _send(to_addr, subject, html_body):
             headers={'Authorization': f'Bearer {resend_key}', 'Content-Type': 'application/json'}
         )
         try:
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, timeout=8)
             log.info("Mail sent via Resend API to %s — %s", to_addr, subject)
-            return
+            return True, "Sent via Resend API"
         except Exception as exc:
-            log.warning("Resend API failed to %s: %s", to_addr, exc)
+            log.warning("Resend API failed to %s: %s; falling back to SMTPS...", to_addr, exc)
+
+    # Try Brevo API if configured
+    brevo_key = os.environ.get('BREVO_API_KEY') or os.environ.get('SENDINBLUE_API_KEY')
+    if brevo_key:
+        import urllib.request, json
+        data = {
+            'sender': {'name': 'Grievance360', 'email': config.MAIL_USER or 'grievance.charusat@gmail.com'},
+            'to': [{'email': to_addr}],
+            'subject': subject,
+            'htmlContent': html_body
+        }
+        req = urllib.request.Request(
+            'https://api.brevo.com/v3/smtp/email',
+            data=json.dumps(data).encode('utf-8'),
+            headers={'api-key': brevo_key, 'Content-Type': 'application/json', 'Accept': 'application/json'}
+        )
+        try:
+            urllib.request.urlopen(req, timeout=8)
+            log.info("Mail sent via Brevo API to %s — %s", to_addr, subject)
+            return True, "Sent via Brevo API"
+        except Exception as exc:
+            log.warning("Brevo API failed to %s: %s; falling back to SMTPS...", to_addr, exc)
+
+    mail_user = (config.MAIL_USER or os.environ.get("MAIL_USER", "grievance.charusat@gmail.com")).strip()
+    mail_pass = (config.MAIL_PASSWORD or os.environ.get("MAIL_PASSWORD", "sggvrxpfdjvdplmf")).strip()
+
+    if not mail_pass:
+        log.warning("Mail dispatch failed: No SMTP password configured.")
+        return False, "No SMTP password configured"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -57,32 +96,47 @@ def _send(to_addr, subject, html_body):
     msg["To"]      = to_addr
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    # Try SMTPS (port 465 SSL) first (optimal for cloud/serverless environments)
+    # Try SMTPS (port 465 SSL) first (optimal for cloud/serverless environments like Vercel)
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=7) as s:
-            s.login(config.MAIL_USER, config.MAIL_PASSWORD)
-            s.sendmail(config.MAIL_USER, [to_addr], msg.as_string())
+            s.login(mail_user, mail_pass)
+            s.sendmail(mail_user, [to_addr], msg.as_string())
         log.info("Mail sent via SMTPS (465) to %s — %s", to_addr, subject)
-        return
+        return True, "Sent via SMTPS (port 465)"
     except Exception as exc_ssl:
-        log.warning("SMTPS (465) failed to %s: %s; falling back to SMTP...", to_addr, exc_ssl)
+        log.warning("SMTPS (465) failed to %s: %s; falling back to SMTP (587)...", to_addr, exc_ssl)
 
     # Fallback to standard SMTP (port 587 STARTTLS)
     try:
-        with smtplib.SMTP(config.MAIL_SMTP, config.MAIL_PORT, timeout=7) as s:
+        port = int(config.MAIL_PORT or 587)
+        host = config.MAIL_SMTP or "smtp.gmail.com"
+        with smtplib.SMTP(host, port, timeout=7) as s:
             s.ehlo()
             s.starttls()
-            s.login(config.MAIL_USER, config.MAIL_PASSWORD)
-            s.sendmail(config.MAIL_USER, [to_addr], msg.as_string())
-        log.info("Mail sent via SMTP (%s) to %s — %s", config.MAIL_PORT, to_addr, subject)
+            s.login(mail_user, mail_pass)
+            s.sendmail(mail_user, [to_addr], msg.as_string())
+        log.info("Mail sent via SMTP (%s) to %s — %s", port, to_addr, subject)
+        return True, f"Sent via SMTP (port {port})"
     except Exception as exc:
         log.warning("Mail failed to %s: %s", to_addr, exc)
+        return False, str(exc)
 
 
 def send_async(to_addr, subject, html_body):
-    """Queue an email on a daemon thread (Removed for Vercel compatibility)."""
-    # Vercel freezes background threads, so we must send synchronously!
-    _send(to_addr, subject, html_body)
+    """Queue an email or send synchronously for serverless (Vercel) compatibility."""
+    return _send(to_addr, subject, html_body)
+
+
+def test_mail_connection(target_email):
+    """Send a test diagnostic email and return (success: bool, message: str)."""
+    subj = "[Grievance360] Live Email Diagnostic Test"
+    body = """
+    <p>Hello,</p>
+    <p>This is an automated diagnostic test from the <strong>Grievance360 Redressal Portal</strong>.</p>
+    <p>If you received this message, the live transactional notification engine is fully operational.</p>
+    """
+    html = _wrap("Live Email Diagnostic Test", body)
+    return _send(target_email, subj, html)
 
 
 # ---------------------------------------------------------------------------

@@ -84,9 +84,9 @@ PAGE_SIZE = 20
 # Use that 16-char app password here — NOT your normal Gmail password.
 MAIL_ENABLED  = os.environ.get("MAIL_ENABLED", "True").lower() in ("true", "1", "yes")
 MAIL_SMTP     = os.environ.get("MAIL_SMTP", "smtp.gmail.com")
-MAIL_PORT     = int(os.environ.get("MAIL_PORT", 587))
+MAIL_PORT     = int(os.environ.get("MAIL_PORT", 465))
 MAIL_USER     = os.environ.get("MAIL_USER", "grievance.charusat@gmail.com")
-MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "sggvrxpfdjvdplmf")
 MAIL_FROM     = os.environ.get("MAIL_FROM", "Grievance360 — CHARUSAT <grievance.charusat@gmail.com>")
 PORTAL_URL    = os.environ.get("PORTAL_URL", "https://grievance360portal.vercel.app")
 
